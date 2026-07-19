@@ -1,6 +1,15 @@
 import tkinter
 
-from constants import ENTER_STEP, HEIGHT, HSTEP, SCROLL_STEP, VSTEP, WIDTH
+from constants import (
+    ENTER_STEP,
+    HEIGHT,
+    HSTEP,
+    SCROLLBAR_MIN_HEIGHT,
+    SCROLLBAR_WIDTH,
+    SCROLL_STEP,
+    VSTEP,
+    WIDTH,
+)
 from url import URL
 
 
@@ -19,12 +28,29 @@ class Browser:
         self.window.bind("<MouseWheel>", self.scroll_mouse_wheel)
         self.window.bind("<Configure>", self.on_resize)
 
+    @property
+    def doc_height(self):
+        if not self.display_list:
+            return 0
+        return self.display_list[-1][1] + VSTEP
+
+    @property
+    def max_scroll(self):
+        return max(0, self.doc_height - self.height)
+
     def scroll_down(self, event):
-        self.scroll += SCROLL_STEP
+        if not self.display_list:
+            return
+        if self.scroll + SCROLL_STEP >= self.max_scroll:
+            self.scroll = self.max_scroll
+        else:
+            self.scroll += SCROLL_STEP
         self.draw()
 
     def scroll_up(self, event):
-        self.scroll -= SCROLL_STEP
+        if self.scroll <= 0:
+            return
+        self.scroll = max(0, self.scroll - SCROLL_STEP)
         self.draw()
 
     def scroll_mouse_wheel(self, event):
@@ -55,6 +81,20 @@ class Browser:
             if y + VSTEP < self.scroll:
                 continue
             self.canvas.create_text(x, y - self.scroll, text=c)
+        self.draw_scrollbar()
+
+    def draw_scrollbar(self):
+        if not self.display_list or self.max_scroll == 0:
+            return
+
+        scrollbar_height = self.height * self.height / self.doc_height
+        scrollbar_height = max(SCROLLBAR_MIN_HEIGHT, min(scrollbar_height, self.height))
+
+        pos_x1 = self.width - SCROLLBAR_WIDTH
+        pos_y1 = (self.scroll / self.max_scroll) * (self.height - scrollbar_height)
+        pos_x2 = self.width
+        pos_y2 = pos_y1 + scrollbar_height
+        self.canvas.create_rectangle(pos_x1, pos_y1, pos_x2, pos_y2, fill="blue")
 
 
 def lex(body):
