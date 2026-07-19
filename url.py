@@ -1,6 +1,7 @@
 import socket
 import ssl
 
+
 class URL:
     def __init__(self, url):
         self.scheme, url = url.split("://", 1)
@@ -29,7 +30,7 @@ class URL:
         if self.scheme == "https":
             ctx = ssl.create_default_context()
             sock = ctx.wrap_socket(sock, server_hostname=self.host)
-        sock.connect((self.host, self.port)) 
+        sock.connect((self.host, self.port))
 
         req = "GET {} HTTP/1.0\r\n".format(self.path)
         req += "Host: {}\r\n".format(self.host)
@@ -37,36 +38,18 @@ class URL:
         sock.send(req.encode("utf8"))
         res = sock.makefile("r", encoding="utf8", newline="\r\n")
         statusline = res.readline()
-        version, status, explanation = statusline.split(" ",2)
+        version, status, explanation = statusline.split(" ", 2)
         res_headers = {}
         while True:
             line = res.readline()
-            if line == "\r\n": break
+            if line == "\r\n":
+                break
             header, value = line.split(":", 1)
             res_headers[header.casefold()] = value.strip()
 
-            assert "transfer-encoding" not in res_headers
-            assert "content-encoding" not in res_headers
+        assert "transfer-encoding" not in res_headers
+        assert "content-encoding" not in res_headers
 
-            body = res.read()
-            sock.close()
-            return body
-
-def show(body):
-        in_tag = False
-        for c in body:
-            if c == "<":
-                in_tag = True
-            elif c == ">":
-                in_tag = False
-            elif not in_tag:
-                print(c, end="")
-def load(url):
-        body = url.request()
-        show(body)
-
-if __name__ == "__main__":
-    import sys
-    load(URL(sys.argv[1]))
-
-
+        body = res.read()
+        sock.close()
+        return body
