@@ -1,6 +1,6 @@
 import tkinter
 
-from constants import HEIGHT, HSTEP, SCROLL_STEP, VSTEP, WIDTH
+from constants import ENTER_STEP, HEIGHT, HSTEP, SCROLL_STEP, VSTEP, WIDTH
 from url import URL
 
 
@@ -49,6 +49,10 @@ def layout(text):
     cursor_x, cursor_y = HSTEP, VSTEP
     display_list = []
     for c in text:
+        if c == "\n":
+            cursor_y += ENTER_STEP
+            cursor_x = HSTEP
+            continue
         display_list.append((cursor_x, cursor_y, c))
         cursor_x += HSTEP
         if cursor_x > WIDTH - HSTEP:
