@@ -19,6 +19,7 @@ class Browser:
         self.width = WIDTH
         self.height = HEIGHT
         self.text = ""
+        self.layout_fn = layout_ltr
         self.canvas = tkinter.Canvas(self.window, width=self.width, height=self.height)
         self.canvas.pack(fill="both", expand=True)
         self.scroll = 0
@@ -64,13 +65,17 @@ class Browser:
             return
         self.width = event.width
         self.height = event.height
-        self.display_list = layout(self.text, self.width)
+        self.display_list = self.layout_fn(self.text, self.width)
         self.draw()
 
     def load(self, url: URL):
         body = url.request()
         self.text = lex(body)
-        self.display_list = layout(self.text, self.width)
+        if "dir=rtl" in body:
+            self.layout_fn = layout_rtl_ar if is_rtl_lang(self.text) else layout_rtl
+        else:
+            self.layout_fn = layout_ltr
+        self.display_list = self.layout_fn(self.text, self.width)
         self.draw()
 
     def draw(self):
@@ -110,7 +115,16 @@ def lex(body):
     return text
 
 
-def layout(text: str, width: int):
+def is_rtl_lang(text: str):
+    for c in text:
+        if "\u0590" <= c <= "\u05FF" or "\u0600" <= c <= "\u06FF":
+            return True
+        if "\u0750" <= c <= "\u077F" or "\u08A0" <= c <= "\u08FF":
+            return True
+    return False
+
+
+def layout_ltr(text: str, width: int):
     cursor_x, cursor_y = HSTEP, VSTEP
     display_list = []
     for c in text:
@@ -122,5 +136,51 @@ def layout(text: str, width: int):
         cursor_x += HSTEP
         if cursor_x > width - HSTEP:
             cursor_x = HSTEP
+            cursor_y += VSTEP
+    return display_list
+
+
+def layout_rtl(text: str, width: int):
+    cursor_x, cursor_y = HSTEP, VSTEP
+    display_list = []
+    line = []
+
+    def shift_line():
+        if not line:
+            return
+        shift = (width - HSTEP) - line[-1][0]
+        for x, y, c in line:
+            display_list.append((x + shift, y, c))
+        line.clear()
+
+    for c in text:
+        if c == "\n":
+            shift_line()
+            cursor_y += ENTER_STEP
+            cursor_x = HSTEP
+            continue
+        line.append((cursor_x, cursor_y, c))
+        cursor_x += HSTEP
+        if cursor_x > width - HSTEP:
+            shift_line()
+            cursor_x = HSTEP
+            cursor_y += VSTEP
+    shift_line()
+    return display_list
+
+
+def layout_rtl_ar(text: str, width: int):
+    # 아랍어/히브리어 전용
+    cursor_x, cursor_y = width - HSTEP, VSTEP
+    display_list = []
+    for c in text:
+        if c == "\n":
+            cursor_y += ENTER_STEP
+            cursor_x = width - HSTEP
+            continue
+        display_list.append((cursor_x, cursor_y, c))
+        cursor_x -= HSTEP
+        if cursor_x < HSTEP:
+            cursor_x = width - HSTEP
             cursor_y += VSTEP
     return display_list
