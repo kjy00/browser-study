@@ -24,6 +24,7 @@ class Browser:
         self.canvas.pack(fill="both", expand=True)
         self.scroll = 0
         self.display_list = []
+        self.emoji_image = tkinter.PhotoImage(file="1F600_color.png")
         self.window.bind("<Down>", self.scroll_down)
         self.window.bind("<Up>", self.scroll_up)
         self.window.bind("<MouseWheel>", self.scroll_mouse_wheel)
@@ -87,6 +88,7 @@ class Browser:
                 continue
             self.canvas.create_text(x, y - self.scroll, text=c)
         self.draw_scrollbar()
+        self.draw_imoji()
 
     def draw_scrollbar(self):
         if not self.display_list or self.max_scroll == 0:
@@ -101,6 +103,8 @@ class Browser:
         pos_y2 = pos_y1 + scrollbar_height
         self.canvas.create_rectangle(pos_x1, pos_y1, pos_x2, pos_y2, fill="blue")
 
+    def draw_imoji(self):
+        self.canvas.create_image(5, 5, image=self.emoji_image, anchor="nw")
 
 def lex(body):
     text = ""
