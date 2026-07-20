@@ -4,6 +4,13 @@ import ssl
 
 class URL:
     def __init__(self, url):
+        if url.startswith("about:"):
+            self.scheme = "about"
+            self.host = ""
+            self.path = url.removeprefix("about:")
+            self.port = None
+            return
+
         self.scheme, url = url.split("://", 1)
         assert self.scheme in ["http", "https"]
         if "/" not in url:
@@ -16,6 +23,9 @@ class URL:
             self.port = int(port)
 
     def request(self):
+        if self.scheme == "about":
+            return ""
+
         if self.port is None:
             if self.scheme == "http":
                 self.port = 80
