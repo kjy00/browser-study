@@ -1,15 +1,14 @@
 import tkinter
 
 from constants import (
-    ENTER_STEP,
     HEIGHT,
-    HSTEP,
     SCROLLBAR_MIN_HEIGHT,
     SCROLLBAR_WIDTH,
     SCROLL_STEP,
     VSTEP,
     WIDTH,
 )
+from layout import Layout, Tag, Text
 from url import URL
 
 
@@ -18,8 +17,7 @@ class Browser:
         self.window = tkinter.Tk()
         self.width = WIDTH
         self.height = HEIGHT
-        self.text = ""
-        self.layout_fn = layout_ltr
+        self.tokens = []
         self.canvas = tkinter.Canvas(self.window, width=self.width, height=self.height)
         self.canvas.pack(fill="both", expand=True)
         self.scroll = 0
@@ -66,29 +64,29 @@ class Browser:
             return
         self.width = event.width
         self.height = event.height
-        self.display_list = self.layout_fn(self.text, self.width)
+        self.display_list = Layout(self.tokens, width=self.width).display_list
+        self.scroll = min(self.scroll, self.max_scroll)
         self.draw()
 
     def load(self, url: URL):
         body = url.request()
-        self.text = lex(body)
-        if "dir=rtl" in body:
-            self.layout_fn = layout_rtl_ar if is_rtl_lang(self.text) else layout_rtl
-        else:
-            self.layout_fn = layout_ltr
-        self.display_list = self.layout_fn(self.text, self.width)
+        self.tokens = lex(body)
+        self.display_list = Layout(self.tokens, width=self.width).display_list
+        self.scroll = 0
         self.draw()
 
     def draw(self):
         self.canvas.delete("all")
-        for x, y, c in self.display_list:
+        for x, y, word, font in self.display_list:
             if y > self.scroll + self.height:
                 continue
             if y + VSTEP < self.scroll:
                 continue
-            self.canvas.create_text(x, y - self.scroll, text=c)
+            self.canvas.create_text(
+                x, y - self.scroll, text=word, font=font, anchor="nw"
+            )
         self.draw_scrollbar()
-        self.draw_imoji()
+        # self.draw_imoji()
 
     def draw_scrollbar(self):
         if not self.display_list or self.max_scroll == 0:
@@ -103,88 +101,23 @@ class Browser:
         pos_y2 = pos_y1 + scrollbar_height
         self.canvas.create_rectangle(pos_x1, pos_y1, pos_x2, pos_y2, fill="blue")
 
-    def draw_imoji(self):
-        self.canvas.create_image(5, 5, image=self.emoji_image, anchor="nw")
 
 def lex(body):
-    text = ""
+    out = []
+    buffer = ""
     in_tag = False
     for c in body:
         if c == "<":
             in_tag = True
+            if buffer:
+                out.append(Text(buffer))
+            buffer = ""
         elif c == ">":
             in_tag = False
-        elif not in_tag:
-            text += c
-    return text
-
-
-def is_rtl_lang(text: str):
-    for c in text:
-        if "\u0590" <= c <= "\u05FF" or "\u0600" <= c <= "\u06FF":
-            return True
-        if "\u0750" <= c <= "\u077F" or "\u08A0" <= c <= "\u08FF":
-            return True
-    return False
-
-
-def layout_ltr(text: str, width: int):
-    cursor_x, cursor_y = HSTEP, VSTEP
-    display_list = []
-    for c in text:
-        if c == "\n":
-            cursor_y += ENTER_STEP
-            cursor_x = HSTEP
-            continue
-        display_list.append((cursor_x, cursor_y, c))
-        cursor_x += HSTEP
-        if cursor_x > width - HSTEP:
-            cursor_x = HSTEP
-            cursor_y += VSTEP
-    return display_list
-
-
-def layout_rtl(text: str, width: int):
-    cursor_x, cursor_y = HSTEP, VSTEP
-    display_list = []
-    line = []
-
-    def shift_line():
-        if not line:
-            return
-        shift = (width - HSTEP) - line[-1][0]
-        for x, y, c in line:
-            display_list.append((x + shift, y, c))
-        line.clear()
-
-    for c in text:
-        if c == "\n":
-            shift_line()
-            cursor_y += ENTER_STEP
-            cursor_x = HSTEP
-            continue
-        line.append((cursor_x, cursor_y, c))
-        cursor_x += HSTEP
-        if cursor_x > width - HSTEP:
-            shift_line()
-            cursor_x = HSTEP
-            cursor_y += VSTEP
-    shift_line()
-    return display_list
-
-
-def layout_rtl_ar(text: str, width: int):
-    # 아랍어/히브리어 전용
-    cursor_x, cursor_y = width - HSTEP, VSTEP
-    display_list = []
-    for c in text:
-        if c == "\n":
-            cursor_y += ENTER_STEP
-            cursor_x = width - HSTEP
-            continue
-        display_list.append((cursor_x, cursor_y, c))
-        cursor_x -= HSTEP
-        if cursor_x < HSTEP:
-            cursor_x = width - HSTEP
-            cursor_y += VSTEP
-    return display_list
+            out.append(Tag(buffer))
+            buffer = ""
+        else:
+            buffer += c
+    if not in_tag and buffer:
+        out.append(Text(buffer))
+    return out
