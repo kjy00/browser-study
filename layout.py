@@ -1,8 +1,10 @@
+import tkinter
 import tkinter.font
 
 from constants import HSTEP, VSTEP
 
 FONTS = {}
+
 
 def get_font(size: int, weight: str, style: str):
     key = (size, weight, style)
@@ -11,6 +13,7 @@ def get_font(size: int, weight: str, style: str):
         label = tkinter.Label(font=font)
         FONTS[key] = (font, label)
     return FONTS[key][0]
+
 
 class Text:
     def __init__(self, text: str):
@@ -31,6 +34,7 @@ class Layout:
         self.weight = "normal"
         self.style = "roman"
         self.size = 16
+        self.abbr = False
         self.width = width
         for tok in tokens:
             self.token(tok)
@@ -55,6 +59,10 @@ class Layout:
             self.size += 4
         elif tok.tag == "/big":
             self.size -= 4
+        elif tok.tag == "abbr":
+            self.abbr = True
+        elif tok.tag == "/abbr":
+            self.abbr = False
         elif tok.tag == "br":
             self.flush()
         elif tok.tag == "/p":
@@ -64,11 +72,22 @@ class Layout:
     def word(self, tok):
         font = get_font(self.size, self.weight, self.style)
         for word in tok.text.split():
-            w = font.measure(word)
-            if self.cursor_x + w > self.width - HSTEP:
-                self.flush()
-            self.line.append((self.cursor_x, word, font))
-            self.cursor_x += w + font.measure(" ")
+            if self.abbr:
+                for c in word:
+                    if c.islower():
+                        self.add_line(c.upper(), get_font(self.size - 2, "bold", self.style))
+                    else:
+                        self.add_line(c, font)
+            else:
+                self.add_line(word, font)
+            self.cursor_x += font.measure(" ")
+
+    def add_line(self, text, font):
+        w = font.measure(text)
+        if self.cursor_x + w > self.width - HSTEP:
+            self.flush()
+        self.line.append((self.cursor_x, text, font))
+        self.cursor_x += w
 
     def flush(self):
         if not self.line:
