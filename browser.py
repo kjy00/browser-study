@@ -8,7 +8,7 @@ from constants import (
     VSTEP,
     WIDTH,
 )
-from layout import Layout, Tag, Text
+from layout import HTMLParser, Layout, Element, Text
 from url import URL
 
 
@@ -17,7 +17,7 @@ class Browser:
         self.window = tkinter.Tk()
         self.width = WIDTH
         self.height = HEIGHT
-        self.tokens = []
+        self.nodes = None
         self.canvas = tkinter.Canvas(self.window, width=self.width, height=self.height)
         self.canvas.pack(fill="both", expand=True)
         self.scroll = 0
@@ -64,14 +64,16 @@ class Browser:
             return
         self.width = event.width
         self.height = event.height
-        self.display_list = Layout(self.tokens, width=self.width).display_list
+        if self.nodes is None:
+            return
+        self.display_list = Layout(self.nodes, width=self.width).display_list
         self.scroll = min(self.scroll, self.max_scroll)
         self.draw()
 
     def load(self, url: URL):
         body = url.request()
-        self.tokens = lex(body)
-        self.display_list = Layout(self.tokens, width=self.width).display_list
+        self.nodes = HTMLParser(body).parse()
+        self.display_list = Layout(self.nodes, width=self.width).display_list
         self.scroll = 0
         self.draw()
 
@@ -101,23 +103,3 @@ class Browser:
         pos_y2 = pos_y1 + scrollbar_height
         self.canvas.create_rectangle(pos_x1, pos_y1, pos_x2, pos_y2, fill="blue")
 
-
-def lex(body):
-    out = []
-    buffer = ""
-    in_tag = False
-    for c in body:
-        if c == "<":
-            in_tag = True
-            if buffer:
-                out.append(Text(buffer))
-            buffer = ""
-        elif c == ">":
-            in_tag = False
-            out.append(Tag(buffer))
-            buffer = ""
-        else:
-            buffer += c
-    if not in_tag and buffer:
-        out.append(Text(buffer))
-    return out
