@@ -60,10 +60,20 @@ class HTMLParser:
         if tag.startswith("/"):
             if len(self.unfinished) == 1:
                 return
+            name = tag[1:]
+            if name not in [node.tag for node in self.unfinished]:
+                return
+            reopen = []
+            while self.unfinished[-1].tag != name:
+                node = self.unfinished.pop()
+                self.unfinished[-1].children.append(node)
+                reopen.append(node)
             node = self.unfinished.pop()
-            parent = self.unfinished[-1] 
-            parent.children.append(node)
-        
+            self.unfinished[-1].children.append(node)
+            while reopen:
+                old = reopen.pop()
+                parent = self.unfinished[-1]
+                self.unfinished.append(Element(old.tag, old.attributes, parent))
         elif tag in SELF_CLOSING_TAGS:
             parent = self.unfinished[-1]
             node = Element(tag, attributes, parent)
