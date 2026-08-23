@@ -213,8 +213,12 @@ class BlockLayout:
         if mode == "block":
             previous = None
             inline_buffer = []
+            run_in = None
             for child in self.nodes[0].children:
                 if not is_block_node(child): #inline tag인 경우
+                    if run_in: #대기 중인 run-in은 인라인 흐름 맨 앞에 합류시킨다
+                        inline_buffer.append(run_in)
+                        run_in = None
                     inline_buffer.append(child)
                 else: #block tag인 경우
                     if inline_buffer: #inline buffer에 쌓인 inline tag를 처리
@@ -222,13 +226,24 @@ class BlockLayout:
                         self.children.append(next)
                         inline_buffer = []
                         previous = next
-                    next = BlockLayout(child, self, previous)
+                    if child.tag == "h6":
+                        run_in = child
+                        continue
+                    if run_in:
+                        next = BlockLayout([run_in, child], self, previous)
+                        run_in = None
+                    else:
+                        next = BlockLayout(child, self, previous)
                     self.children.append(next)
                     previous = next
             if inline_buffer: #남은 inline tag를 처리
                 next = BlockLayout(inline_buffer, self, previous)
                 self.children.append(next)
                 inline_buffer = []
+            if run_in:
+                next = BlockLayout(run_in, self, previous)
+                self.children.append(next)
+                run_in = None
         else:
             self.cursor_x = 0
             self.cursor_y = 0
