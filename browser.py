@@ -8,7 +8,8 @@ from constants import (
     VSTEP,
     WIDTH,
 )
-from layout import HTMLParser, Layout, Element, Text
+from documentLayout import DocumentLayout
+from layout import HTMLParser, paint_tree
 from url import URL
 
 
@@ -30,21 +31,16 @@ class Browser:
 
     @property
     def doc_height(self):
-        if not self.display_list:
+        if self.nodes is None:
             return 0
-        return self.display_list[-1][1] + VSTEP
+        return self.document.height + 2 * VSTEP
 
     @property
     def max_scroll(self):
         return max(0, self.doc_height - self.height)
 
     def scroll_down(self, event):
-        if not self.display_list:
-            return
-        if self.scroll + SCROLL_STEP >= self.max_scroll:
-            self.scroll = self.max_scroll
-        else:
-            self.scroll += SCROLL_STEP
+        self.scroll = min(self.scroll + SCROLL_STEP, self.max_scroll)
         self.draw()
 
     def scroll_up(self, event):
@@ -66,27 +62,29 @@ class Browser:
         self.height = event.height
         if self.nodes is None:
             return
-        self.display_list = Layout(self.nodes, width=self.width).display_list
+        self.document = DocumentLayout(self.nodes, width=self.width)
+        self.document.layout()
+        self.display_list = []
+        paint_tree(self.document, self.display_list)
         self.scroll = min(self.scroll, self.max_scroll)
         self.draw()
 
     def load(self, url: URL):
         body = url.request()
         self.nodes = HTMLParser(body).parse()
-        self.display_list = Layout(self.nodes, width=self.width).display_list
+        self.document = DocumentLayout(self.nodes, width=self.width)
+        self.document.layout()
         self.scroll = 0
+        self.display_list = []
+        paint_tree(self.document, self.display_list)
         self.draw()
 
     def draw(self):
         self.canvas.delete("all")
-        for x, y, word, font in self.display_list:
-            if y > self.scroll + self.height:
-                continue
-            if y + VSTEP < self.scroll:
-                continue
-            self.canvas.create_text(
-                x, y - self.scroll, text=word, font=font, anchor="nw"
-            )
+        for cmd in self.display_list:
+            if cmd.top > self.scroll + self.height: continue
+            if cmd.bottom < self.scroll: continue
+            cmd.execute(self.scroll, self.canvas)
         self.draw_scrollbar()
         # self.draw_imoji()
 

@@ -1,6 +1,7 @@
 import tkinter
 import tkinter.font
 
+from draw import DrawRect, DrawText
 from constants import HSTEP, VSTEP
 
 FONTS = {}
@@ -10,6 +11,19 @@ SELF_CLOSING_TAGS = [
     "link", "meta", "param", "source", "track", "wbr",
 ]
 
+BLOCK_ELEMENTS = [
+    "html", "body", "article", "section","nav", "aside",
+    "h1", "h2", "h3", "h4", "h5", "h6", "hgroup", "header",
+    "footer", "address", "p", "hr", "pre", "blockquote",
+    "ol", "ul", "menu", "li", "dl", "dt", "dd", "figure",
+    "figcaption", "main", "div", "table", "form", "fieldset",
+    "legend", "details", "summary"
+]
+
+def paint_tree(layout_object, display_list):
+        display_list.extend(layout_object.paint())
+        for child in layout_object.children:
+            paint_tree(child, display_list)
 
 def get_font(size: int, weight: str, style: str):
     key = (size, weight, style)
@@ -49,6 +63,7 @@ class HTMLParser:
 
     def add_text(self, text):
         if text.isspace(): return
+        self.implicit_tags(None)
         parent = self.unfinished[-1]
         node = Text(text, parent)
         parent.children.append(node)
@@ -145,20 +160,70 @@ def print_tree(node, indent=0):
     for child in node.children:
         print_tree(child, indent + 2)
 
-class Layout:
-    def __init__(self, nodes, width: int):
+class BlockLayout:
+    def __init__(self, node, parent, previous):
+        self.node = node
+        self.parent = parent
+        self.previous = previous
+        self.children = []
         self.display_list = []
-        self.line = []
-        self.cursor_x = HSTEP
-        self.cursor_y = VSTEP
-        self.weight = "normal"
-        self.style = "roman"
-        self.size = 16
-        self.abbr = False
-        self.width = width
-        self.recurse(nodes)
-        self.flush()
+        self.width = None
+        self.height = None
+        self.x = None
+        self.y = None
 
+    def paint(self):
+        cmds = []
+        if isinstance(self.node, Element) and self.node.tag == "pre":
+            x2, y2 = self.x + self.width, self.y + self.height
+            rect = DrawRect(self.x, self.y, x2, y2, "gray")
+            cmds.append(rect)
+        if self.layout_mode() == "inline":
+            for x, y, word, font in self.display_list:
+                cmds.append(DrawText(x, y, word, font))
+        return cmds
+
+    def layout_mode(self):
+        if isinstance(self.node, Text):
+            return "inline"
+        elif any(isinstance(child, Element) \
+            and child.tag in BLOCK_ELEMENTS for child in self.node.children):
+            return "block"
+        elif self.node.children:
+            return "inline"
+        else:
+            return "block"
+    def layout(self):
+        mode = self.layout_mode()
+        self.x = self.parent.x
+        self.width = self.parent.width
+        if self.previous:
+            self.y = self.previous.y + self.previous.height
+        else:
+            self.y = self.parent.y
+        if mode == "block":
+            previous = None
+            for child in self.node.children:
+                next = BlockLayout(child, self, previous)
+                self.children.append(next)
+                previous = next
+        else:
+            self.cursor_x = 0
+            self.cursor_y = 0
+            self.size = 12
+            self.weight = "normal"
+            self.style = "roman"
+            self.abbr = False
+            self.line = []
+            self.display_list = []
+            self.recurse(self.node)
+            self.flush()
+        for child in self.children:
+            child.layout()
+        if mode == "block":
+            self.height = sum([child.height for child in self.children])
+        else:
+            self.height = self.cursor_y
     def open_tag(self, tag):
         if tag == "i":
             self.style = "italic"
@@ -212,7 +277,7 @@ class Layout:
 
     def add_line(self, text, font):
         w = font.measure(text)
-        if self.cursor_x + w > self.width - HSTEP:
+        if self.cursor_x + w > self.width:
             self.flush()
         self.line.append((self.cursor_x, text, font))
         self.cursor_x += w
@@ -220,13 +285,15 @@ class Layout:
     def flush(self):
         if not self.line:
             return
+        self.cursor_x = 0
         metrics = [font.metrics() for _, _, font in self.line]
         max_ascent = max([metric["ascent"] for metric in metrics])
         baseline = self.cursor_y + 1.25 * max_ascent
-        for x, word, font in self.line:
-            y = baseline - font.metrics("ascent")
+        for rel_x, word, font in self.line:
+            x = self.x + rel_x
+            y = self.y + baseline - font.metrics("ascent")
             self.display_list.append((x, y, word, font))
         max_descent = max([metric["descent"] for metric in metrics])
         self.cursor_y = baseline + 1.25 * max_descent
-        self.cursor_x = HSTEP
+        self.cursor_x = 0
         self.line = []
