@@ -63,3 +63,14 @@ class URL:
         body = res.read()
         sock.close()
         return body
+
+    def resolve(self, url):
+        if "://" in url:
+            return URL(url)
+        if not url.startswith("/"):
+            dir, _ = self.path.rsplit("/", 1)
+            url = dir + "/" + url
+        if url.startswith("//"):
+            return URL(self.scheme + ":" + url)
+        else:
+            return URL(self.scheme + "://" + self.host + ":" + str(self.port) + url)
