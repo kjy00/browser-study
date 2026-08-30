@@ -20,6 +20,9 @@ BLOCK_ELEMENTS = [
     "legend", "details", "summary"
 ]
 
+def is_block_node(node):
+    return isinstance(node, Element) and node.tag in BLOCK_ELEMENTS
+
 def paint_tree(layout_object, display_list):
         display_list.extend(layout_object.paint())
         for child in layout_object.children:
@@ -161,8 +164,10 @@ def print_tree(node, indent=0):
         print_tree(child, indent + 2)
 
 class BlockLayout:
-    def __init__(self, node, parent, previous):
-        self.node = node
+    def __init__(self, nodes, parent, previous):
+        self.nodes = nodes
+        if not isinstance(self.nodes, list):
+            self.nodes = [self.nodes]
         self.parent = parent
         self.previous = previous
         self.children = []
@@ -174,7 +179,7 @@ class BlockLayout:
 
     def paint(self):
         cmds = []
-        if isinstance(self.node, Element) and self.node.tag == "pre":
+        if len(self.nodes) == 1 and isinstance(self.nodes[0], Element) and self.nodes[0].tag == "pre":
             x2, y2 = self.x + self.width, self.y + self.height
             rect = DrawRect(self.x, self.y, x2, y2, "gray")
             cmds.append(rect)
@@ -184,15 +189,19 @@ class BlockLayout:
         return cmds
 
     def layout_mode(self):
-        if isinstance(self.node, Text):
+        if len(self.nodes) > 1:
+            # node가 여러개인 경우 inline 모드만 들어오도록 구현한다.
+            return "inline"
+        if isinstance(self.nodes[0], Text):
             return "inline"
         elif any(isinstance(child, Element) \
-            and child.tag in BLOCK_ELEMENTS for child in self.node.children):
+            and child.tag in BLOCK_ELEMENTS for child in self.nodes[0].children):
             return "block"
-        elif self.node.children:
+        elif self.nodes[0].children:
             return "inline"
         else:
             return "block"
+
     def layout(self):
         mode = self.layout_mode()
         self.x = self.parent.x
@@ -203,10 +212,38 @@ class BlockLayout:
             self.y = self.parent.y
         if mode == "block":
             previous = None
-            for child in self.node.children:
-                next = BlockLayout(child, self, previous)
+            inline_buffer = []
+            run_in = None
+            for child in self.nodes[0].children:
+                if not is_block_node(child): #inline tag인 경우
+                    if run_in: #대기 중인 run-in은 인라인 흐름 맨 앞에 합류시킨다
+                        inline_buffer.append(run_in)
+                        run_in = None
+                    inline_buffer.append(child)
+                else: #block tag인 경우
+                    if inline_buffer: #inline buffer에 쌓인 inline tag를 처리
+                        next = BlockLayout(inline_buffer, self, previous)
+                        self.children.append(next)
+                        inline_buffer = []
+                        previous = next
+                    if child.tag == "h6":
+                        run_in = child
+                        continue
+                    if run_in:
+                        next = BlockLayout([run_in, child], self, previous)
+                        run_in = None
+                    else:
+                        next = BlockLayout(child, self, previous)
+                    self.children.append(next)
+                    previous = next
+            if inline_buffer: #남은 inline tag를 처리
+                next = BlockLayout(inline_buffer, self, previous)
                 self.children.append(next)
-                previous = next
+                inline_buffer = []
+            if run_in:
+                next = BlockLayout(run_in, self, previous)
+                self.children.append(next)
+                run_in = None
         else:
             self.cursor_x = 0
             self.cursor_y = 0
@@ -216,7 +253,7 @@ class BlockLayout:
             self.abbr = False
             self.line = []
             self.display_list = []
-            self.recurse(self.node)
+            self.recurse(self.nodes)
             self.flush()
         for child in self.children:
             child.layout()
@@ -254,14 +291,14 @@ class BlockLayout:
             self.cursor_y += VSTEP
 
     def recurse(self, tree):
-        if isinstance(tree, Text):
-            for word in tree.text.split():
-                self.word(word)
-        else:
-            self.open_tag(tree.tag)
-            for child in tree.children:
-                self.recurse(child)
-            self.close_tag(tree.tag)
+        for node in tree:
+            if isinstance(node, Text):
+                for word in node.text.split():
+                    self.word(word)
+            else:
+                self.open_tag(node.tag)
+                self.recurse(node.children)
+                self.close_tag(node.tag)
 
     def word(self, word):
         font = get_font(self.size, self.weight, self.style)
