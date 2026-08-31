@@ -251,10 +251,6 @@ class BlockLayout:
         else:
             self.cursor_x = 0
             self.cursor_y = 0
-            self.size = 12
-            self.weight = "normal"
-            self.style = "roman"
-            self.abbr = False
             self.line = []
             self.display_list = []
             self.recurse(self.nodes)
@@ -297,7 +293,6 @@ class BlockLayout:
     def flush(self):
         if not self.line:
             return
-        self.cursor_x = 0
         metrics = [font.metrics() for _, _, font, color in self.line]
         max_ascent = max([metric["ascent"] for metric in metrics])
         baseline = self.cursor_y + 1.25 * max_ascent

@@ -13,6 +13,7 @@ def tree_to_list(tree, list):
 		tree_to_list(child, list)
 	return list
 
+# HTML 트리를 재귀로 돌면서 style 속성을 파싱 후 딕셔너리 형태로 저장
 def style(node, rules):
 	node.style = {}
 	for property, default_value in INHERITED_PROPERTIES.items():
