@@ -179,13 +179,17 @@ class BlockLayout:
 
     def paint(self):
         cmds = []
-        if len(self.nodes) == 1 and isinstance(self.nodes[0], Element) and self.nodes[0].tag == "pre":
+        if len(self.nodes) == 1:
+            bgColor = self.nodes[0].style.get("background-color", "transparent")
+        else:
+            bgColor = "transparent"
+        if bgColor != "transparent":
             x2, y2 = self.x + self.width, self.y + self.height
-            rect = DrawRect(self.x, self.y, x2, y2, "gray")
+            rect = DrawRect(self.x, self.y, x2, y2, bgColor)
             cmds.append(rect)
         if self.layout_mode() == "inline":
-            for x, y, word, font in self.display_list:
-                cmds.append(DrawText(x, y, word, font))
+            for x, y, word, font, color in self.display_list:
+                cmds.append(DrawText(x, y, word, font, color))
         return cmds
 
     def layout_mode(self):
@@ -247,10 +251,6 @@ class BlockLayout:
         else:
             self.cursor_x = 0
             self.cursor_y = 0
-            self.size = 12
-            self.weight = "normal"
-            self.style = "roman"
-            self.abbr = False
             self.line = []
             self.display_list = []
             self.recurse(self.nodes)
@@ -261,75 +261,45 @@ class BlockLayout:
             self.height = sum([child.height for child in self.children])
         else:
             self.height = self.cursor_y
-    def open_tag(self, tag):
-        if tag == "i":
-            self.style = "italic"
-        elif tag == "b":
-            self.weight = "bold"
-        elif tag == "small":
-            self.size -= 2
-        elif tag == "big":
-            self.size += 4
-        elif tag == "abbr":
-            self.abbr = True
-        
-        elif tag == "br":
-            self.flush()
-    def close_tag(self, tag):
-        if tag == "i":
-            self.style = "roman"
-        elif tag == "b":
-            self.weight = "normal"
-        elif tag == "small":
-            self.size += 2
-        elif tag == "big":
-            self.size -= 4
-        elif tag == "abbr":
-            self.abbr = False
-        elif tag == "p":
-            self.flush()
-            self.cursor_y += VSTEP
 
     def recurse(self, tree):
         for node in tree:
             if isinstance(node, Text):
                 for word in node.text.split():
-                    self.word(word)
+                    self.word(node, word)
             else:
-                self.open_tag(node.tag)
+                if node.tag == "br":
+                    self.flush()
                 self.recurse(node.children)
-                self.close_tag(node.tag)
 
-    def word(self, word):
-        font = get_font(self.size, self.weight, self.style)
-        if self.abbr:
-            for c in word:
-                if c.islower():
-                    self.add_line(c.upper(), get_font(self.size - 2, "bold", self.style))
-                else:
-                    self.add_line(c, font)
-        else:
-            self.add_line(word, font)
+    def word(self, node, word):
+        weight = node.style["font-weight"]
+        style = node.style["font-style"]
+        if style == "normal":
+            style = "roman"
+        size = int(float(node.style["font-size"][:-2]) * .75)
+        color = node.style["color"]
+        font = get_font(size, weight, style)
+        self.add_line(word, font, color)
         self.cursor_x += font.measure(" ")
 
-    def add_line(self, text, font):
+    def add_line(self, text, font, color):
         w = font.measure(text)
         if self.cursor_x + w > self.width:
             self.flush()
-        self.line.append((self.cursor_x, text, font))
+        self.line.append((self.cursor_x, text, font, color))
         self.cursor_x += w
 
     def flush(self):
         if not self.line:
             return
-        self.cursor_x = 0
-        metrics = [font.metrics() for _, _, font in self.line]
+        metrics = [font.metrics() for _, _, font, color in self.line]
         max_ascent = max([metric["ascent"] for metric in metrics])
         baseline = self.cursor_y + 1.25 * max_ascent
-        for rel_x, word, font in self.line:
+        for rel_x, word, font, color in self.line:
             x = self.x + rel_x
             y = self.y + baseline - font.metrics("ascent")
-            self.display_list.append((x, y, word, font))
+            self.display_list.append((x, y, word, font, color))
         max_descent = max([metric["descent"] for metric in metrics])
         self.cursor_y = baseline + 1.25 * max_descent
         self.cursor_x = 0
