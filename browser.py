@@ -10,7 +10,7 @@ from constants import (
 )
 from cssParser import CSSParser, cascade_priority, style, tree_to_list
 from documentLayout import DocumentLayout
-from layout import Element, HTMLParser, paint_tree
+from layout import Element, HTMLParser, Text, paint_tree
 from url import URL
 
 DEFAULT_STYLE_SHEET = CSSParser(open("browser.css").read()).parse()
@@ -64,8 +64,6 @@ class Browser:
         self.height = event.height
         if self.nodes is None:
             return
-        rules = DEFAULT_STYLE_SHEET.copy()
-        style(self.nodes, rules)
         self.document = DocumentLayout(self.nodes, width=self.width)
         self.document.layout()
         self.display_list = []
@@ -77,7 +75,8 @@ class Browser:
         body = url.request()
         self.nodes = HTMLParser(body).parse()
         rules = DEFAULT_STYLE_SHEET.copy()
-        links = [node.attributes["href"] for node in tree_to_list(self.nodes, []) 
+        node_list = tree_to_list(self.nodes, [])
+        links = [node.attributes["href"] for node in node_list
                 if isinstance(node, Element) and node.tag == "link" 
                 and node.attributes.get("rel") == "stylesheet" 
                 and "href" in node.attributes]
@@ -88,6 +87,12 @@ class Browser:
             except Exception:
                 continue
             rules.extend(CSSParser(body).parse())
+        style_nodes = [node for node in node_list 
+            if isinstance(node, Element) and node.tag == "style"
+        ]
+        for style_node in style_nodes:
+            css = "".join( child.text for child in style_node.children if isinstance(child, Text))
+            rules.extend(CSSParser(css).parse())
         style(self.nodes, (sorted(rules, key=cascade_priority)))
         self.document = DocumentLayout(self.nodes, width=self.width)
         self.document.layout()
