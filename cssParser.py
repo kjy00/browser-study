@@ -104,14 +104,15 @@ class CSSParser:
 		return None
 	
 	def selector(self):
-		out = TagSelector(self.word().casefold())
+		selectors = [TagSelector(self.word().casefold())]
 		self.whitespace()
 		while self.i < len(self.s) and self.s[self.i] != "{":
 			tag = self.word()
-			descendant = TagSelector(tag.casefold())
-			out = DescendantSelector(out, descendant)
+			selectors.append(TagSelector(tag.casefold()))
 			self.whitespace()
-		return out
+		if len(selectors) == 1:
+			return selectors[0]
+		return DescendantSelector(selectors)
 
 	def parse(self):
 		rules = []
@@ -140,13 +141,15 @@ class TagSelector:
 		return isinstance(node, Element) and self.tag == node.tag
 
 class DescendantSelector:
-	def __init__(self, ancestor, descendant):
-		self.ancestor = ancestor
-		self.descendant = descendant
-		self.priority = ancestor.priority + descendant.priority
+	def __init__(self, selectors):
+		self.selectors = selectors
+		self.priority = sum(selector.priority for selector in selectors)
 	def matches(self, node):
-		if not self.descendant.matches(node): return False
-		while node.parent:
-			if self.ancestor.matches(node.parent): return True
+		remaining = self.selectors.copy()
+		if not remaining.pop().matches(node):
+			return False
+		while node.parent and remaining:
 			node = node.parent
-		return False
+			if remaining[-1].matches(node):
+				remaining.pop()
+		return not remaining
