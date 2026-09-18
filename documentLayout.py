@@ -1,5 +1,5 @@
 from constants import HSTEP, VSTEP
-from layout import BlockLayout
+from blockLayout import BlockLayout
 
 
 class DocumentLayout:

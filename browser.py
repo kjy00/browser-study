@@ -10,7 +10,7 @@ from constants import (
 )
 from cssParser import CSSParser, cascade_priority, style, tree_to_list
 from documentLayout import DocumentLayout
-from layout import Element, HTMLParser, Text, paint_tree
+from blockLayout import Element, HTMLParser, Text, paint_tree
 from url import URL
 
 DEFAULT_STYLE_SHEET = CSSParser(open("browser.css").read()).parse()

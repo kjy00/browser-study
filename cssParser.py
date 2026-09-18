@@ -1,4 +1,4 @@
-from layout import Element
+from blockLayout import Element
 
 INHERITED_PROPERTIES = {
     "font-size": "16px",
