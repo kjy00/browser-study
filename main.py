@@ -9,9 +9,9 @@ if __name__ == "__main__":
 
     def load():
         try:
-            browser.load(URL(sys.argv[1]))
+            browser.new_tab(URL(sys.argv[1]))
         except Exception:
-            browser.load(URL("about:blank"))
+            browser.new_tab(URL("about:blank"))
 
     browser.window.after(10, load)
     browser.window.mainloop()

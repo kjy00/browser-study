@@ -64,6 +64,20 @@ class URL:
         sock.close()
         return body
 
+    def __str__(self):
+        if self.scheme == "about":
+            return "about:" + self.path
+        return self.scheme + "://" + self.host + self.port_part() + self.path
+
+    def port_part(self):
+        if self.port is None: 
+            return ""
+        if self.scheme == "https" and self.port == 443:
+            return ""
+        if self.scheme == "http" and self.port == 80:
+            return ""
+        return ":" + str(self.port)
+
     def resolve(self, url):
         if "://" in url:
             return URL(url)
@@ -73,4 +87,4 @@ class URL:
         if url.startswith("//"):
             return URL(self.scheme + ":" + url)
         else:
-            return URL(self.scheme + "://" + self.host + ":" + str(self.port) + url)
+            return URL(self.scheme + "://" + self.host + self.port_part() + url)
