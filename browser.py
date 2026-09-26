@@ -92,9 +92,10 @@ class Browser:
         self.draw()
 
     def draw(self):
-        self.canvas.delete("all") 
+        self.canvas.delete("all")
         if self.active_tab is not None:
             self.active_tab.draw(self.canvas, self.chrome.bottom)
+            self.window.title(self.active_tab.title)
         for cmd in self.chrome.paint():
             cmd.execute(0, self.canvas)
 
@@ -109,6 +110,7 @@ class Tab:
         self.display_list = []
         self.url = None
         self.history = []
+        self.title = ""
 
     @property
     def doc_height(self):
@@ -163,6 +165,12 @@ class Tab:
         self.nodes = HTMLParser(body).parse()
         rules = DEFAULT_STYLE_SHEET.copy() 
         node_list = tree_to_list(self.nodes, [])
+        #<title> 태그의 텍스트를 받아온다.
+        title_tag = [node for node in node_list if isinstance(node, Element) and node.tag == "title"]
+        if title_tag:
+            self.title = "".join(child.text for child in title_tag[0].children if isinstance(child, Text))
+        else:
+            self.title = str(self.url)
         #<link> 태그의 스타일시트를 받아온다.
         links = [node.attributes["href"] for node in node_list 
                 if isinstance(node, Element) and node.tag == "link" 
