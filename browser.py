@@ -8,7 +8,7 @@ from constants import (
     VSTEP,
     WIDTH,
 )
-from chrome import Chrome
+from chrome import NEW_TAB_URL, Chrome
 from cssParser import CSSParser, cascade_priority, style, tree_to_list
 from documentLayout import DocumentLayout
 from blockLayout import Element, HTMLParser, Text, paint_tree
@@ -17,15 +17,38 @@ from url import URL
 DEFAULT_STYLE_SHEET = CSSParser(open("browser.css").read()).parse()
 
 class Browser:
+    #프로세스 전체. 창 목록과 Tk 루트만 가진다.
     def __init__(self):
+        self.root = tkinter.Tk()
+        self.root.withdraw()
+        self.windows = []
+
+    def new_window(self, url: URL):
+        window = Window(self)
+        self.windows.append(window)
+        window.new_tab(url)
+        return window
+
+    def close_window(self, window):
+        self.windows.remove(window)
+        window.window.destroy()
+        if not self.windows: #마지막 창이 닫히면 프로세스도 끝낸다.
+            self.root.destroy()
+
+
+class Window:
+    #창 하나. 캔버스와 크롬, 탭 목록을 가진다.
+    def __init__(self, browser: Browser):
+        self.browser = browser
         self.tabs = []
         self.active_tab = None
         self.width = WIDTH
         self.height = HEIGHT
-        self.window = tkinter.Tk()
+        self.window = tkinter.Toplevel(browser.root)
         self.canvas = tkinter.Canvas(self.window, width=self.width, height=self.height, bg="white")
         self.canvas.pack(fill="both", expand=True)
         self.chrome = Chrome(self)
+        self.window.protocol("WM_DELETE_WINDOW", self.handle_close)
         self.window.bind("<Down>", self.handle_down)
         self.window.bind("<Up>", self.handle_up)
         self.window.bind("<MouseWheel>", self.handle_mouse_wheel)
@@ -33,10 +56,15 @@ class Browser:
         self.window.bind("<Button-1>", self.handle_click)
         self.window.bind("<Key>", self.handle_key)
         self.window.bind("<Return>", self.handle_enter)
+        self.window.bind("<BackSpace>", self.handle_backspace)
+        self.window.bind("<Control-n>", self.handle_new_window)
 
     @property
     def tab_height(self):
         return self.height - self.chrome.bottom
+
+    def handle_new_window(self, event):
+        self.browser.new_window(URL(NEW_TAB_URL))
 
     def new_tab(self, url: URL):
         new_tab = Tab(self.width, self.tab_height)
@@ -77,6 +105,13 @@ class Browser:
         self.chrome.enter()
         self.draw()
 
+    def handle_backspace(self, event):
+        self.chrome.delete()
+        self.draw()
+
+    def handle_close(self):
+        self.browser.close_window(self)
+
     def handle_resize(self, event):
         if event.widget != self.window:
             return
@@ -87,9 +122,10 @@ class Browser:
         self.draw()
 
     def draw(self):
-        self.canvas.delete("all") 
+        self.canvas.delete("all")
         if self.active_tab is not None:
             self.active_tab.draw(self.canvas, self.chrome.bottom)
+            self.window.title(self.active_tab.title)
         for cmd in self.chrome.paint():
             cmd.execute(0, self.canvas)
 
@@ -104,6 +140,7 @@ class Tab:
         self.display_list = []
         self.url = None
         self.history = []
+        self.title = ""
 
     @property
     def doc_height(self):
@@ -158,6 +195,12 @@ class Tab:
         self.nodes = HTMLParser(body).parse()
         rules = DEFAULT_STYLE_SHEET.copy() 
         node_list = tree_to_list(self.nodes, [])
+        #<title> 태그의 텍스트를 받아온다.
+        title_tag = [node for node in node_list if isinstance(node, Element) and node.tag == "title"]
+        if title_tag:
+            self.title = "".join(child.text for child in title_tag[0].children if isinstance(child, Text))
+        else:
+            self.title = str(self.url)
         #<link> 태그의 스타일시트를 받아온다.
         links = [node.attributes["href"] for node in node_list 
                 if isinstance(node, Element) and node.tag == "link" 
