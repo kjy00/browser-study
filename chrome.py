@@ -119,6 +119,8 @@ class Chrome:
     def keypress(self, char):
         if self.focus == "address bar":
             self.address_bar += char
+            return True
+        return False
 
     def delete(self):
         if self.focus == "address bar":
@@ -128,3 +130,6 @@ class Chrome:
         if self.focus == "address bar":
             self.window.active_tab.load(URL(self.address_bar))
             self.focus = None
+    
+    def blur(self):
+        self.focus = None

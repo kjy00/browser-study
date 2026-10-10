@@ -1,6 +1,7 @@
 from draw import DrawRect, Rect
 from constants import HSTEP, VSTEP
 from fonts import get_font
+from inputLayout import INPUT_WIDTH_PX, InputLayout
 from lineLayout import LineLayout
 from textLayout import TextLayout
 
@@ -24,9 +25,10 @@ def is_block_node(node):
     return isinstance(node, Element) and node.tag in BLOCK_ELEMENTS
 
 def paint_tree(layout_object, display_list):
+    if layout_object.should_paint():
         display_list.extend(layout_object.paint())
-        for child in layout_object.children:
-            paint_tree(child, display_list)
+    for child in layout_object.children:
+        paint_tree(child, display_list)
 
 
 
@@ -35,6 +37,7 @@ class Text:
         self.parent = parent
         self.text = text
         self.children = []
+        self.is_focused = False
     def __repr__(self):
         return repr(self.text)
 
@@ -45,6 +48,7 @@ class Element:
         self.children = []
         self.parent = parent
         self.attributes = attributes
+        self.is_focused = False
     def __repr__(self):
         return "<" + self.tag + ">"
 
@@ -184,6 +188,9 @@ class BlockLayout:
             cmds.append(rect)
         return cmds
 
+    def should_paint(self):
+        return isinstance(self.nodes[0], Text) or (self.nodes[0].tag != "input" and self.nodes[0].tag != "button")
+
     def layout_mode(self):
         if len(self.nodes) > 1:
             # node가 여러개인 경우 inline 모드만 들어오도록 구현한다.
@@ -193,7 +200,7 @@ class BlockLayout:
         elif any(isinstance(child, Element) \
             and child.tag in BLOCK_ELEMENTS for child in self.nodes[0].children):
             return "block"
-        elif self.nodes[0].children:
+        elif self.nodes[0].children or self.nodes[0].tag == "input":
             return "inline"
         else:
             return "block"
@@ -256,7 +263,25 @@ class BlockLayout:
             else:
                 if node.tag == "br":
                     self.new_line()
+                elif node.tag == "input" or node.tag == "button":
+                    self.input(node)
                 self.recurse(node.children)
+
+    def input(self, node):
+        w = INPUT_WIDTH_PX
+        if self.cursor_x + w > self.width:
+            self.new_line()
+        line = self.children[-1]
+        previous_word = line.children[-1] if line.children else None
+        input = InputLayout(node, line, previous_word)
+        line.children.append(input)
+
+        weight = node.style["font-weight"]
+        style = node.style["font-style"]
+        if style == "normal": style = "roman"
+        size = int(float(node.style["font-size"][:-2]) * .75)
+        font = get_font(size, weight, style)
+        self.cursor_x += w + font.measure(" ")
 
     def word(self, node, word):
         weight = node.style["font-weight"]

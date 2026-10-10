@@ -22,7 +22,7 @@ class URL:
             self.host, port = self.host.split(":", 1)
             self.port = int(port)
 
-    def request(self):
+    def request(self, payload=None):
         if self.scheme == "about":
             return ""
 
@@ -42,9 +42,15 @@ class URL:
             sock = ctx.wrap_socket(sock, server_hostname=self.host)
         sock.connect((self.host, self.port))
 
-        req = "GET {} HTTP/1.0\r\n".format(self.path)
+        method = "POST" if payload else "GET"
+        req = "{} {} HTTP/1.0\r\n".format(method, self.path)
         req += "Host: {}\r\n".format(self.host)
+        if payload:
+            length = len(payload.encode("utf8"))
+            req += "Content-Length: {}\r\n".format(length)
         req += "\r\n"
+        if payload:
+            req += payload
         sock.send(req.encode("utf8"))
         res = sock.makefile("r", encoding="utf8", newline="\r\n")
         statusline = res.readline()

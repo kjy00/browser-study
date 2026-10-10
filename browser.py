@@ -1,4 +1,5 @@
 import tkinter
+import urllib.parse
 
 from constants import (
     HEIGHT,
@@ -90,16 +91,22 @@ class Window:
 
     def handle_click(self, event):
         if event.y < self.chrome.bottom:
+            self.focus = None
             self.chrome.click(event.x, event.y)
-        else:
+        elif self.active_tab is not None:
+            self.focus = "content"
+            self.chrome.blur()
             self.active_tab.click(event.x, event.y - self.chrome.bottom)
         self.draw()
 
     def handle_key(self, event):
         if len(event.char) == 0: return 
         if not (0x20 <= ord(event.char) < 0x7f): return
-        self.chrome.keypress(event.char)
-        self.draw()
+        if self.chrome.keypress(event.char):
+            self.draw()
+        elif self.focus == "content":
+            self.active_tab.keypress(event.char)
+            self.draw()
 
     def handle_enter(self, event):
         self.chrome.enter()
@@ -115,8 +122,12 @@ class Window:
     def handle_resize(self, event):
         if event.widget != self.window:
             return
-        self.width = event.width
-        self.height = event.height
+        width = self.window.winfo_width()
+        height = self.window.winfo_height()
+        if width <= 1 or height <= self.chrome.bottom:
+            return
+        self.width = width
+        self.height = height
         for tab in self.tabs:
             tab.resize(self.width, self.tab_height)
         self.draw()
@@ -141,6 +152,7 @@ class Tab:
         self.url = None
         self.history = []
         self.title = ""
+        self.focus = None
 
     @property
     def doc_height(self):
@@ -167,6 +179,7 @@ class Tab:
         self.scroll = min(self.scroll, self.max_scroll)
 
     def click(self, x, y):
+        self.focus = None
         y += self.scroll
         objs = [obj for obj in tree_to_list(self.document, []) 
         if obj.x <= x < obj.x + obj.width 
@@ -180,6 +193,18 @@ class Tab:
             elif elt.tag == "a" and "href" in elt.attributes:
                 url = self.url.resolve(elt.attributes["href"])
                 return self.load(url)
+            elif elt.tag == "input" :
+                if self.focus:
+                    self.focus.is_focused = False
+                self.focus = elt
+                elt.is_focused = True
+                elt.attributes["value"] = ""
+                return self.render()
+            elif elt.tag == "button":
+                while elt:
+                    if elt.tag == "form" and "action" in elt.attributes:
+                        return self.submit_form(elt)
+                    elt = elt.parent
             elt = elt.parent
 
     def go_back(self):
@@ -188,12 +213,12 @@ class Tab:
             back = self.history.pop()
             self.load(back)
 
-    def load(self, url: URL):
+    def load(self, url: URL, payload=None):
         self.url = url
         self.history.append(url)
-        body = url.request()
+        body = url.request(payload)
         self.nodes = HTMLParser(body).parse()
-        rules = DEFAULT_STYLE_SHEET.copy() 
+        self.rules = DEFAULT_STYLE_SHEET.copy() 
         node_list = tree_to_list(self.nodes, [])
         #<title> 태그의 텍스트를 받아온다.
         title_tag = [node for node in node_list if isinstance(node, Element) and node.tag == "title"]
@@ -212,18 +237,18 @@ class Tab:
                 body = style_url.request()
             except Exception:
                 continue
-            rules.extend(CSSParser(body).parse())
+            self.rules.extend(CSSParser(body).parse())
         style_nodes = [node for node in node_list #<style> 태그의 스타일을 미리 RULE에 넣는다.
             if isinstance(node, Element) and node.tag == "style"
         ]
         for style_node in style_nodes:
             css = "".join( child.text for child in style_node.children if isinstance(child, Text))
-            rules.extend(CSSParser(css).parse())
-        style(self.nodes, (sorted(rules, key=cascade_priority))) #각 노드에 스타일을 적용한다.
+            self.rules.extend(CSSParser(css).parse())
         self.scroll = 0
         self.render()
 
     def render(self):
+        style(self.nodes, (sorted(self.rules, key=cascade_priority))) #각 노드에 스타일을 적용한다.
         self.document = DocumentLayout(self.nodes, width=self.width) #레이아웃 트리(x, y, width, height)를 만든다.
         self.document.layout()
         self.display_list = []
@@ -248,3 +273,19 @@ class Tab:
         pos_x2 = self.width
         pos_y2 = pos_y1 + scrollbar_height
         canvas.create_rectangle(pos_x1, pos_y1, pos_x2, pos_y2, fill="blue")
+    def keypress(self, char):
+        if self.focus:
+            self.focus.attributes["value"] += char
+            self.render()
+    def submit_form(self, elt):
+        inputs = [node for node in tree_to_list(elt, []) if isinstance(node, Element) and node.tag == "input" and "name" in node.attributes]
+        body = ""
+        for input in inputs:
+            name = input.attributes["name"]
+            value = input.attributes.get("value", "")
+            name = urllib.parse.quote(name)
+            value = urllib.parse.quote(value)
+            body += "&" + name + "=" + value
+        body = body[1:]
+        url = self.url.resolve(elt.attributes["action"])
+        self.load(url, body)
