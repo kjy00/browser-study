@@ -1,7 +1,21 @@
+import os
 import socket
 import urllib.parse
 
-ENTRIES = ['Pavel was here']
+ENTRIES_FILE = os.path.join(os.path.dirname(__file__), "entries.txt")
+
+def load_entries():
+    if not os.path.exists(ENTRIES_FILE):
+        return ["Pavel was here"]
+    with open(ENTRIES_FILE, encoding="utf8") as f:
+        return [line.rstrip("\n") for line in f]
+
+def save_entries():
+    with open(ENTRIES_FILE, "w", encoding="utf8") as f:
+        for entry in ENTRIES:
+            f.write(entry.replace("\n", " ") + "\n")
+
+ENTRIES = load_entries()
 
 def handle_connection(conx):
     req = conx.makefile("b")
@@ -66,6 +80,7 @@ def form_decode(body):
 def add_entry(params):
     if 'guest' in params:
         ENTRIES.append(params['guest'])
+        save_entries()
     return show_comments()
 
 def not_found(url, method):
