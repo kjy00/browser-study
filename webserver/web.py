@@ -1,7 +1,21 @@
+import os
 import socket
 import urllib.parse
 
-ENTRIES = ['Pavel was here']
+ENTRIES_FILE = os.path.join(os.path.dirname(__file__), "entries.txt")
+
+def load_entries():
+    if not os.path.exists(ENTRIES_FILE):
+        return ["Pavel was here"]
+    with open(ENTRIES_FILE, encoding="utf8") as f:
+        return [line.rstrip("\n") for line in f]
+
+def save_entries():
+    with open(ENTRIES_FILE, "w", encoding="utf8") as f:
+        for entry in ENTRIES:
+            f.write(entry.replace("\n", " ") + "\n")
+
+ENTRIES = load_entries()
 
 def handle_connection(conx):
     req = conx.makefile("b")
@@ -31,23 +45,31 @@ def show_comments():
     out = "<!doctype html>"
     for entry in ENTRIES:
         out += "<p>" + entry + "</p>"
-    out += "<form action=add method=post>"
+    out += "<form action=add method=get>"
     out +=  "<p><input name=guest></p>"
     out +=  "<p><button>Sign the book!</button></p>"
     out += "</form>"
     return out
 
 def do_request(method, url, headers, body):
+    query = None
+    if "?" in url:
+        url, query = url.split("?", 1)
     if method == "GET" and url == "/":
         return "200 OK", show_comments()
     elif method == "POST" and url == "/add":
         params = form_decode(body)
+        return "200 OK", add_entry(params)
+    elif method == "GET" and url == "/add":
+        params = form_decode(query or "")
         return "200 OK", add_entry(params)
     else:
         return "404 Not Found", not_found(url, method)
 
 def form_decode(body):
     params = {}
+    if not body:
+        return params
     for field in body.split("&"):
         name, value = field.split("=", 1)
         name = urllib.parse.unquote_plus(name)
@@ -58,6 +80,7 @@ def form_decode(body):
 def add_entry(params):
     if 'guest' in params:
         ENTRIES.append(params['guest'])
+        save_entries()
     return show_comments()
 
 def not_found(url, method):

@@ -288,4 +288,10 @@ class Tab:
             body += "&" + name + "=" + value
         body = body[1:]
         url = self.url.resolve(elt.attributes["action"])
-        self.load(url, body)
+        method = elt.attributes.get("method", "get").casefold()
+        if method == "post":
+            self.load(url, body)
+        else:
+            separator = "&" if "?" in url.path else "?"
+            url.path += separator + body
+            self.load(url)
