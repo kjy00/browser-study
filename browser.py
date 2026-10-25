@@ -1,5 +1,6 @@
 import tkinter
 import urllib.parse
+import dukpy
 
 from constants import (
     HEIGHT,
@@ -226,6 +227,17 @@ class Tab:
             self.title = "".join(child.text for child in title_tag[0].children if isinstance(child, Text))
         else:
             self.title = str(self.url)
+        #<script> 태그의 스크립트를 받아온다.
+        scripts = [node.attributes["src"] for node in node_list 
+                if isinstance(node, Element) and node.tag == "script"
+                and "src" in node.attributes]
+        for script in scripts:
+            script_url = url.resolve(script)
+            try:
+                body = script_url.request()
+            except:
+                continue
+            print("Script returned: ", dukpy.evaljs(body))
         #<link> 태그의 스타일시트를 받아온다.
         links = [node.attributes["href"] for node in node_list 
                 if isinstance(node, Element) and node.tag == "link" 
