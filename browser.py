@@ -239,7 +239,7 @@ class Tab:
                 body = script_url.request()
             except:
                 continue
-            self.js.run(body)
+            self.js.run(script_url, body)
         #<link> 태그의 스타일시트를 받아온다.
         links = [node.attributes["href"] for node in node_list 
                 if isinstance(node, Element) and node.tag == "link" 

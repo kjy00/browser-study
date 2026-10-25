@@ -5,7 +5,10 @@ class JSContext:
     def __init__(self):
         self.interp = dukpy.JSInterpreter()
         self.interp.export_function("log", print)
+        self.interp.export_function("querySelectorAll", self.querySelectorAll)
         self.interp.evaljs(RUNTIME_JS)
-        
-    def run(self, code):
-        return self.interp.evaljs(code)
+    def run(self, script, code):
+        try:
+            return self.interp.evaljs(code)
+        except dukpy.JSRuntimeError as e:
+            print("Script", script, "crashed", e)
