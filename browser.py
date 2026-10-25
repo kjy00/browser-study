@@ -1,5 +1,6 @@
 import tkinter
 import urllib.parse
+from JSContext import JSContext
 import dukpy
 
 from constants import (
@@ -219,7 +220,8 @@ class Tab:
         self.history.append(url)
         body = url.request(payload)
         self.nodes = HTMLParser(body).parse()
-        self.rules = DEFAULT_STYLE_SHEET.copy() 
+        self.rules = DEFAULT_STYLE_SHEET.copy()
+        self.js = JSContext()
         node_list = tree_to_list(self.nodes, [])
         #<title> 태그의 텍스트를 받아온다.
         title_tag = [node for node in node_list if isinstance(node, Element) and node.tag == "title"]
@@ -237,7 +239,7 @@ class Tab:
                 body = script_url.request()
             except:
                 continue
-            print("Script returned: ", dukpy.evaljs(body))
+            self.js.run(body)
         #<link> 태그의 스타일시트를 받아온다.
         links = [node.attributes["href"] for node in node_list 
                 if isinstance(node, Element) and node.tag == "link" 
