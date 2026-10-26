@@ -10,6 +10,7 @@ class JSContext:
         self.interp = dukpy.JSInterpreter()
         self.interp.export_function("log", print)
         self.interp.export_function("querySelectorAll", self.querySelectorAll)
+        self.interp.export_function("getAttribute", self.getAttribute)
         self.interp.evaljs(RUNTIME_JS)
     def run(self, script, code):
         try:
@@ -28,3 +29,7 @@ class JSContext:
         else:
             handle = self.node_to_handle[elt]
         return handle
+    def getAttribute(self, handle, attr):
+        elt = self.handle_to_node[handle]
+        attr = elt.attributes.get(attr, None)
+        return attr if attr else ""
