@@ -1,5 +1,7 @@
 import tkinter
 import urllib.parse
+from JSContext import JSContext
+import dukpy
 
 from constants import (
     HEIGHT,
@@ -191,9 +193,11 @@ class Tab:
             if isinstance(elt, Text):
                 pass
             elif elt.tag == "a" and "href" in elt.attributes:
+                self.js.dispatch_event("click", elt)
                 url = self.url.resolve(elt.attributes["href"])
                 return self.load(url)
             elif elt.tag == "input" :
+                self.js.dispatch_event("click", elt)
                 if self.focus:
                     self.focus.is_focused = False
                 self.focus = elt
@@ -201,6 +205,7 @@ class Tab:
                 elt.attributes["value"] = ""
                 return self.render()
             elif elt.tag == "button":
+                self.js.dispatch_event("click", elt)
                 while elt:
                     if elt.tag == "form" and "action" in elt.attributes:
                         return self.submit_form(elt)
@@ -218,7 +223,8 @@ class Tab:
         self.history.append(url)
         body = url.request(payload)
         self.nodes = HTMLParser(body).parse()
-        self.rules = DEFAULT_STYLE_SHEET.copy() 
+        self.rules = DEFAULT_STYLE_SHEET.copy()
+        self.js = JSContext(self)
         node_list = tree_to_list(self.nodes, [])
         #<title> 태그의 텍스트를 받아온다.
         title_tag = [node for node in node_list if isinstance(node, Element) and node.tag == "title"]
@@ -226,6 +232,17 @@ class Tab:
             self.title = "".join(child.text for child in title_tag[0].children if isinstance(child, Text))
         else:
             self.title = str(self.url)
+        #<script> 태그의 스크립트를 받아온다.
+        scripts = [node.attributes["src"] for node in node_list 
+                if isinstance(node, Element) and node.tag == "script"
+                and "src" in node.attributes]
+        for script in scripts:
+            script_url = url.resolve(script)
+            try:
+                body = script_url.request()
+            except:
+                continue
+            self.js.run(script_url, body)
         #<link> 태그의 스타일시트를 받아온다.
         links = [node.attributes["href"] for node in node_list 
                 if isinstance(node, Element) and node.tag == "link" 
@@ -275,9 +292,11 @@ class Tab:
         canvas.create_rectangle(pos_x1, pos_y1, pos_x2, pos_y2, fill="blue")
     def keypress(self, char):
         if self.focus:
+            self.js.dispatch_event("keydown", self.focus)
             self.focus.attributes["value"] += char
             self.render()
     def submit_form(self, elt):
+        self.js.dispatch_event("submit", elt)
         inputs = [node for node in tree_to_list(elt, []) if isinstance(node, Element) and node.tag == "input" and "name" in node.attributes]
         body = ""
         for input in inputs:
