@@ -1,6 +1,7 @@
 from cssParser import CSSParser, tree_to_list
 import dukpy
 
+EVENT_DISPATCH_JS = "new Node(dukpy.handle).dispatchEvent(dukpy.type)"
 RUNTIME_JS = open("runtime.js").read()
 class JSContext:
     def __init__(self, tab):
@@ -33,3 +34,6 @@ class JSContext:
         elt = self.handle_to_node[handle]
         attr = elt.attributes.get(attr, None)
         return attr if attr else ""
+    def dispatch_event(self, type, elt):
+        handle = self.node_to_handle.get(elt, -1)
+        self.interp.evaljs(EVENT_DISPATCH_JS, type=type, handle=handle)
