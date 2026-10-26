@@ -221,7 +221,7 @@ class Tab:
         body = url.request(payload)
         self.nodes = HTMLParser(body).parse()
         self.rules = DEFAULT_STYLE_SHEET.copy()
-        self.js = JSContext()
+        self.js = JSContext(self)
         node_list = tree_to_list(self.nodes, [])
         #<title> 태그의 텍스트를 받아온다.
         title_tag = [node for node in node_list if isinstance(node, Element) and node.tag == "title"]

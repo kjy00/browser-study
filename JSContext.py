@@ -1,8 +1,12 @@
+from cssParser import CSSParser, tree_to_list
 import dukpy
 
 RUNTIME_JS = open("runtime.js").read()
 class JSContext:
-    def __init__(self):
+    def __init__(self, tab):
+        self.tab = tab
+        self.node_to_handle = {}
+        self.handle_to_node = {}
         self.interp = dukpy.JSInterpreter()
         self.interp.export_function("log", print)
         self.interp.export_function("querySelectorAll", self.querySelectorAll)
@@ -12,3 +16,15 @@ class JSContext:
             return self.interp.evaljs(code)
         except dukpy.JSRuntimeError as e:
             print("Script", script, "crashed", e)
+    def querySelectorAll(self, selector_text):
+        selector = CSSParser(selector_text).selector()
+        nodes = [node for node in tree_to_list(self.tab.nodes, []) if selector.matches(node)]
+        return [self.get_handle(node) for node in nodes]
+    def get_handle(self, elt):
+        if elt not in self.node_to_handle:
+            handle = len(self.node_to_handle)
+            self.node_to_handle[elt] = handle
+            self.handle_to_node[handle] = elt
+        else:
+            handle = self.node_to_handle[elt]
+        return handle
