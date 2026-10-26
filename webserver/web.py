@@ -49,6 +49,9 @@ def show_comments():
     out +=  "<p><input name=guest></p>"
     out +=  "<p><button>Sign the book!</button></p>"
     out += "</form>"
+    out += "<strong></strong>"
+    out += "<link rel=stylesheet href=/comment.css>"
+    out += "<script src=/comment.js></script>"
     return out
 
 def do_request(method, url, headers, body):
@@ -63,6 +66,12 @@ def do_request(method, url, headers, body):
     elif method == "GET" and url == "/add":
         params = form_decode(query or "")
         return "200 OK", add_entry(params)
+    elif method == "GET" and url == "/comment.js":
+        with open(os.path.join(os.path.dirname(__file__), "comment.js")) as f:
+            return "200 OK", f.read()
+    elif method == "GET" and url == "/comment.css":
+        with open(os.path.join(os.path.dirname(__file__), "comment.css")) as f:
+            return "200 OK", f.read()
     else:
         return "404 Not Found", not_found(url, method)
 

@@ -41,3 +41,9 @@ document = {
     });
   },
 };
+
+Object.defineProperty(Node.prototype, 'innerHTML', {
+  set: function (s) {
+    call_python('innerHTML_set', this.handle, s.toString());
+  },
+});
