@@ -5,6 +5,15 @@ console = {
     call_python('log', x);
   },
 };
+function Event(type) {
+  this.type = type;
+  this.do_default = true;
+}
+
+Event.prototype.preventDefault = function () {
+  this.do_default = false;
+};
+
 function Node(handle) {
   this.handle = handle;
 }
@@ -21,12 +30,14 @@ Node.prototype.addEventListener = function (type, listener) {
   list.push(listener);
 };
 
-Node.prototype.dispatchEvent = function (type) {
+Node.prototype.dispatchEvent = function (evt) {
+  var type = evt.type;
   var handle = this.handle;
   var list = (LISTENERS[handle] && LISTENERS[handle][type]) || [];
   for (var i = 0; i < list.length; i++) {
-    list[i].call(this);
+    list[i].call(this, evt);
   }
+  return evt.do_default;
 };
 
 Node.prototype.getAttribute = function (attr) {

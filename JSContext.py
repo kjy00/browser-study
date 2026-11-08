@@ -2,7 +2,7 @@ from blockLayout import HTMLParser
 from cssParser import CSSParser, tree_to_list
 import dukpy
 
-EVENT_DISPATCH_JS = "new Node(dukpy.handle).dispatchEvent(dukpy.type)"
+EVENT_DISPATCH_JS = "new Node(dukpy.handle).dispatchEvent(new Event(dukpy.type))"
 RUNTIME_JS = open("runtime.js").read()
 class JSContext:
     def __init__(self, tab):
@@ -38,7 +38,9 @@ class JSContext:
         return attr if attr else ""
     def dispatch_event(self, type, elt):
         handle = self.node_to_handle.get(elt, -1)
-        self.interp.evaljs(EVENT_DISPATCH_JS, type=type, handle=handle)
+        do_default = self.interp.evaljs(
+            EVENT_DISPATCH_JS, type=type, handle=handle)
+        return not do_default
     def innerHTML_set(self, handle, s):
         doc = HTMLParser("<html><body>" + s + "</body></html>").parse()
         new_nodes = doc.children[0].children

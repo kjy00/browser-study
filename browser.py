@@ -193,11 +193,11 @@ class Tab:
             if isinstance(elt, Text):
                 pass
             elif elt.tag == "a" and "href" in elt.attributes:
-                self.js.dispatch_event("click", elt)
+                if self.js.dispatch_event("click", elt): return
                 url = self.url.resolve(elt.attributes["href"])
                 return self.load(url)
             elif elt.tag == "input" :
-                self.js.dispatch_event("click", elt)
+                if self.js.dispatch_event("click", elt): return
                 if self.focus:
                     self.focus.is_focused = False
                 self.focus = elt
@@ -205,7 +205,7 @@ class Tab:
                 elt.attributes["value"] = ""
                 return self.render()
             elif elt.tag == "button":
-                self.js.dispatch_event("click", elt)
+                if self.js.dispatch_event("click", elt): return
                 while elt:
                     if elt.tag == "form" and "action" in elt.attributes:
                         return self.submit_form(elt)
@@ -292,11 +292,11 @@ class Tab:
         canvas.create_rectangle(pos_x1, pos_y1, pos_x2, pos_y2, fill="blue")
     def keypress(self, char):
         if self.focus:
-            self.js.dispatch_event("keydown", self.focus)
+            if self.js.dispatch_event("keydown", self.focus): return
             self.focus.attributes["value"] += char
             self.render()
     def submit_form(self, elt):
-        self.js.dispatch_event("submit", elt)
+        if self.js.dispatch_event("submit", elt): return
         inputs = [node for node in tree_to_list(elt, []) if isinstance(node, Element) and node.tag == "input" and "name" in node.attributes]
         body = ""
         for input in inputs:
