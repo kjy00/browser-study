@@ -1,6 +1,7 @@
 import os
 import socket
 import urllib.parse
+import random
 
 ENTRIES_FILE = os.path.join(os.path.dirname(__file__), "entries.txt")
 
@@ -16,7 +17,7 @@ def save_entries():
             f.write(entry.replace("\n", " ") + "\n")
 
 ENTRIES = load_entries()
-
+SESSIONS = {}
 def handle_connection(conx):
     req = conx.makefile("b")
     reqline = req.readline().decode('utf8')
@@ -28,20 +29,29 @@ def handle_connection(conx):
         if line == '\r\n': break
         header, value = line.split(":", 1)
         headers[header.casefold()] = value.strip()
+
+    if 'cookie' in headers:
+        token = headers["cookie"][len("token="):]
+    else:
+        token = str(random.random())[2:]
     if 'content-length' in headers:
         length = int(headers['content-length'])
         body = req.read(length).decode('utf8')
     else:
         body = None
-    status, body = do_request(method, url, headers, body)
+    session = SESSIONS.setdefault(token, {})
+    status, body = do_request(session, method, url, headers, body)
     response = "HTTP/1.0 {}\r\n".format(status)
     response += "Content-Length: {}\r\n".format(
         len(body.encode("utf8")))
+    if "cookie" not in headers:
+        template = "Set-Cookie: token={}\r\n"
+        response += template.format(token)
     response += "\r\n" + body
     conx.send(response.encode('utf8'))
     conx.close()
 
-def show_comments():
+def show_comments(session):
     out = "<!doctype html>"
     for entry in ENTRIES:
         out += "<p>" + entry + "</p>"
@@ -54,18 +64,18 @@ def show_comments():
     out += "<script src=/comment.js></script>"
     return out
 
-def do_request(method, url, headers, body):
+def do_request(session, method, url, headers, body):
     query = None
     if "?" in url:
         url, query = url.split("?", 1)
     if method == "GET" and url == "/":
-        return "200 OK", show_comments()
+        return "200 OK", show_comments(session)
     elif method == "POST" and url == "/add":
         params = form_decode(body)
-        return "200 OK", add_entry(params)
+        return "200 OK", add_entry(session, params)
     elif method == "GET" and url == "/add":
         params = form_decode(query or "")
-        return "200 OK", add_entry(params)
+        return "200 OK", add_entry(session, params)
     elif method == "GET" and url == "/comment.js":
         with open(os.path.join(os.path.dirname(__file__), "comment.js")) as f:
             return "200 OK", f.read()
@@ -86,11 +96,11 @@ def form_decode(body):
         params[name] = value
     return params
 
-def add_entry(params):
+def add_entry(session, params):
     if 'guest' in params and len(params['guest']) <= 100:
         ENTRIES.append(params['guest'])
         save_entries()
-    return show_comments()
+    return show_comments(session)
 
 def not_found(url, method):
     out = "<!doctype html>"
