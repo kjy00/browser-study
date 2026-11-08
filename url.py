@@ -110,6 +110,9 @@ class URL:
             return ""
         return ":" + str(self.port)
 
+    def origin(self):
+        return self.scheme + "://" + self.host + ":" + str(self.port)
+
     def resolve(self, url):
         if "://" in url:
             return URL(url)

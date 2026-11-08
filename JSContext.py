@@ -52,4 +52,6 @@ class JSContext:
         self.tab.render()
     def XMLHttpRequest_send(self, method, url, body):
         full_url = self.tab.url.resolve(url)
+        if full_url.origin() != self.tab.url.origin():
+            raise Exception("Cross-origin XHR request not allowed")
         return full_url.request(body)
