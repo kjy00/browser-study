@@ -1,5 +1,6 @@
 import socket
 import ssl
+import urllib.parse
 
 
 class URL:
@@ -9,6 +10,21 @@ class URL:
             self.host = ""
             self.path = url.removeprefix("about:")
             self.port = None
+            return
+
+        # file:///절대경로 는 이 컴퓨터의 파일을 가리킨다. 호스트는 비어 있다.
+        if url.startswith("file://"):
+            self.scheme = "file"
+            self.port = None
+            rest = url.removeprefix("file://")
+            if rest.startswith("/"):
+                self.host = ""
+                self.path = urllib.parse.unquote(rest)
+            else:
+                if "/" not in rest:
+                    rest += "/"
+                self.host, path = rest.split("/", 1)
+                self.path = urllib.parse.unquote("/" + path)
             return
 
         self.scheme, url = url.split("://", 1)
@@ -25,6 +41,9 @@ class URL:
     def request(self, payload=None):
         if self.scheme == "about":
             return ""
+        if self.scheme == "file":
+            with open(self.path, encoding="utf8") as f:
+                return f.read()
 
         if self.port is None:
             if self.scheme == "http":
