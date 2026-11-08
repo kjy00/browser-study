@@ -28,8 +28,8 @@ def save_entries():
 ENTRIES = load_entries()
 SESSIONS = {}
 LOGINS = {
-    'hi': 'password',
-    'hihi': 'password',
+    'hi': 'hi',
+    'hihi': 'hihi',
 }
 def handle_connection(conx):
     req = conx.makefile("b")

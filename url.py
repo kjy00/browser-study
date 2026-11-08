@@ -2,6 +2,7 @@ import socket
 import ssl
 import urllib.parse
 
+COOKIE_JAR = {}
 
 class URL:
     def __init__(self, url):
@@ -64,6 +65,9 @@ class URL:
         method = "POST" if payload else "GET"
         req = "{} {} HTTP/1.0\r\n".format(method, self.path)
         req += "Host: {}\r\n".format(self.host)
+        if self.host in COOKIE_JAR:
+            cookie = COOKIE_JAR[self.host]
+            req += "Cookie: {}\r\n".format(cookie)
         if payload:
             length = len(payload.encode("utf8"))
             req += "Content-Length: {}\r\n".format(length)
@@ -85,6 +89,9 @@ class URL:
         assert "transfer-encoding" not in res_headers
         assert "content-encoding" not in res_headers
 
+        if "set-cookie" in res_headers:
+            cookie = res_headers["set-cookie"]
+            COOKIE_JAR[self.host] = cookie
         body = res.read()
         sock.close()
         return body
