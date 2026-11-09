@@ -219,9 +219,9 @@ class Tab:
             self.load(back)
 
     def load(self, url: URL, payload=None):
+        body = url.request(self.url, payload)
         self.url = url
         self.history.append(url)
-        body = url.request(payload)
         self.nodes = HTMLParser(body).parse()
         self.rules = DEFAULT_STYLE_SHEET.copy()
         self.js = JSContext(self)
@@ -239,7 +239,7 @@ class Tab:
         for script in scripts:
             script_url = url.resolve(script)
             try:
-                body = script_url.request()
+                body = script_url.request(url)
             except:
                 continue
             self.js.run(script_url, body)
@@ -251,7 +251,7 @@ class Tab:
         for link in links:
             style_url = url.resolve(link)
             try:
-                body = style_url.request()
+                body = style_url.request(url)
             except Exception:
                 continue
             self.rules.extend(CSSParser(body).parse())

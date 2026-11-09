@@ -39,7 +39,7 @@ class URL:
             self.host, port = self.host.split(":", 1)
             self.port = int(port)
 
-    def request(self, payload=None):
+    def request(self, referrer, payload=None):
         if self.scheme == "about":
             return ""
         if self.scheme == "file":
@@ -66,8 +66,13 @@ class URL:
         req = "{} {} HTTP/1.0\r\n".format(method, self.path)
         req += "Host: {}\r\n".format(self.host)
         if self.host in COOKIE_JAR:
-            cookie = COOKIE_JAR[self.host]
-            req += "Cookie: {}\r\n".format(cookie)
+            cookie, params = COOKIE_JAR[self.host]
+            allow_cookie = True
+            if referrer and params.get("samesite", "none") == "lax":
+                if method != "GET":
+                    allow_cookie = self.host == referrer.host
+            if allow_cookie:
+                req += "Cookie: {}\r\n".format(cookie)
         if payload:
             length = len(payload.encode("utf8"))
             req += "Content-Length: {}\r\n".format(length)
@@ -91,7 +96,16 @@ class URL:
 
         if "set-cookie" in res_headers:
             cookie = res_headers["set-cookie"]
-            COOKIE_JAR[self.host] = cookie
+            params = {}
+            if ";" in cookie:
+                cookie, rest = cookie.split(";", 1)
+                for param in rest.split(";"):
+                    if '=' in param:
+                        param, value = param.split("=", 1)
+                    else:
+                        value = "true"
+                    params[param.strip().casefold()] = value.casefold()
+            COOKIE_JAR[self.host] = (cookie, params)
         body = res.read()
         sock.close()
         return body
