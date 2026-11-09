@@ -1,3 +1,4 @@
+import html
 import json
 import os
 import socket
@@ -67,8 +68,8 @@ def handle_connection(conx):
 def show_comments(session):
     out = "<!doctype html>"
     for entry, who in ENTRIES:
-        out += "<p>" + entry + "\n"
-        out += "<i>by " + who + "</i></p>"
+        out += "<p>" + html.escape(entry) + "\n"
+        out += "<i>by " + html.escape(who) + "</i></p>"
     if "user" in session:
         nonce = str(random.random())[2:]
         session["nonce"] = nonce
