@@ -219,9 +219,16 @@ class Tab:
             self.load(back)
 
     def load(self, url: URL, payload=None):
-        body = url.request(self.url, payload)
+        headers, body = url.request(self.url, payload)
         self.url = url
         self.history.append(url)
+        self.allowed_origins = None
+        if "content-security-policy" in headers:
+            csp = headers["content-security-policy"].split()
+            if len(csp) > 0 and csp[0] == "default-src":
+                self.allowed_origins = []
+                for origin in csp[1:]:
+                    self.allowed_origins.append(URL(origin).origin())
         self.nodes = HTMLParser(body).parse()
         self.rules = DEFAULT_STYLE_SHEET.copy()
         self.js = JSContext(self)
@@ -238,8 +245,11 @@ class Tab:
                 and "src" in node.attributes]
         for script in scripts:
             script_url = url.resolve(script)
+            if not self.allowed_request(script_url):
+                print("Blocked script", script, "due to CSP")
+                continue
             try:
-                body = script_url.request(url)
+                header, body = script_url.request(url)
             except:
                 continue
             self.js.run(script_url, body)
@@ -250,8 +260,11 @@ class Tab:
                 and "href" in node.attributes]
         for link in links:
             style_url = url.resolve(link)
+            if not self.allowed_request(style_url):
+                print("Blocked style", link, "due to CSP")
+                continue
             try:
-                body = style_url.request(url)
+                header, body = style_url.request(url)
             except Exception:
                 continue
             self.rules.extend(CSSParser(body).parse())
@@ -263,6 +276,10 @@ class Tab:
             self.rules.extend(CSSParser(css).parse())
         self.scroll = 0
         self.render()
+
+    def allowed_request(self, url):
+        return self.allowed_origins == None or \
+            url.origin() in self.allowed_origins
 
     def render(self):
         style(self.nodes, (sorted(self.rules, key=cascade_priority))) #각 노드에 스타일을 적용한다.

@@ -41,10 +41,10 @@ class URL:
 
     def request(self, referrer, payload=None):
         if self.scheme == "about":
-            return ""
+            return {}, ""
         if self.scheme == "file":
             with open(self.path, encoding="utf8") as f:
-                return f.read()
+                return {}, f.read()
 
         if self.port is None:
             if self.scheme == "http":
@@ -108,7 +108,7 @@ class URL:
             COOKIE_JAR[self.host] = (cookie, params)
         body = res.read()
         sock.close()
-        return body
+        return res_headers, body
 
     def __str__(self):
         if self.scheme == "about":

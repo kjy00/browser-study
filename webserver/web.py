@@ -58,6 +58,8 @@ def handle_connection(conx):
     response = "HTTP/1.0 {}\r\n".format(status)
     response += "Content-Length: {}\r\n".format(
         len(body.encode("utf8")))
+    csp = "default-src http://localhost:8000"
+    response += "Content-Security-Policy: {}\r\n".format(csp)
     if "cookie" not in headers:
         template = "Set-Cookie: token={}; SameSite=Lax\r\n"
         response += template.format(token)
@@ -84,6 +86,7 @@ def show_comments(session):
     out += "<strong></strong>"
     out += "<link rel=stylesheet href=/comment.css>"
     out += "<script src=/comment.js></script>"
+    out += "<script src=https://example.com/evil.js></script>"
     return out
 
 def do_request(session, method, url, headers, body):
