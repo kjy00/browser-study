@@ -2,6 +2,7 @@ import socket
 import ssl
 import urllib.parse
 
+COOKIE_JAR = {}
 
 class URL:
     def __init__(self, url):
@@ -38,12 +39,12 @@ class URL:
             self.host, port = self.host.split(":", 1)
             self.port = int(port)
 
-    def request(self, payload=None):
+    def request(self, referrer, payload=None):
         if self.scheme == "about":
-            return ""
+            return {}, ""
         if self.scheme == "file":
             with open(self.path, encoding="utf8") as f:
-                return f.read()
+                return {}, f.read()
 
         if self.port is None:
             if self.scheme == "http":
@@ -64,6 +65,14 @@ class URL:
         method = "POST" if payload else "GET"
         req = "{} {} HTTP/1.0\r\n".format(method, self.path)
         req += "Host: {}\r\n".format(self.host)
+        if self.host in COOKIE_JAR:
+            cookie, params = COOKIE_JAR[self.host]
+            allow_cookie = True
+            if referrer and params.get("samesite", "none") == "lax":
+                if method != "GET":
+                    allow_cookie = self.host == referrer.host
+            if allow_cookie:
+                req += "Cookie: {}\r\n".format(cookie)
         if payload:
             length = len(payload.encode("utf8"))
             req += "Content-Length: {}\r\n".format(length)
@@ -85,9 +94,21 @@ class URL:
         assert "transfer-encoding" not in res_headers
         assert "content-encoding" not in res_headers
 
+        if "set-cookie" in res_headers:
+            cookie = res_headers["set-cookie"]
+            params = {}
+            if ";" in cookie:
+                cookie, rest = cookie.split(";", 1)
+                for param in rest.split(";"):
+                    if '=' in param:
+                        param, value = param.split("=", 1)
+                    else:
+                        value = "true"
+                    params[param.strip().casefold()] = value.casefold()
+            COOKIE_JAR[self.host] = (cookie, params)
         body = res.read()
         sock.close()
-        return body
+        return res_headers, body
 
     def __str__(self):
         if self.scheme == "about":
@@ -102,6 +123,9 @@ class URL:
         if self.scheme == "http" and self.port == 80:
             return ""
         return ":" + str(self.port)
+
+    def origin(self):
+        return self.scheme + "://" + self.host + ":" + str(self.port)
 
     def resolve(self, url):
         if "://" in url:

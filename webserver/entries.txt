@@ -1,2 +1,2 @@
-Pavel was here
-hi
+{"guest": "Pavel was here", "user": "pavel"}
+{"guest": "hi", "user": "jiyoon"}

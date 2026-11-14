@@ -1,22 +1,37 @@
+import html
+import json
 import os
 import socket
 import urllib.parse
+import random
 
 ENTRIES_FILE = os.path.join(os.path.dirname(__file__), "entries.txt")
 
 def load_entries():
     if not os.path.exists(ENTRIES_FILE):
-        return ["Pavel was here"]
+        return [("Pavel was here", "Pavel")]
+    entries = []
     with open(ENTRIES_FILE, encoding="utf8") as f:
-        return [line.rstrip("\n") for line in f]
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            item = json.loads(line)
+            entries.append((item["guest"], item["user"]))
+    return entries
 
 def save_entries():
     with open(ENTRIES_FILE, "w", encoding="utf8") as f:
-        for entry in ENTRIES:
-            f.write(entry.replace("\n", " ") + "\n")
+        for entry, who in ENTRIES:
+            item = {"guest": entry.replace("\n", " "), "user": who}
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
 ENTRIES = load_entries()
-
+SESSIONS = {}
+LOGINS = {
+    'hi': 'hi',
+    'hihi': 'hihi',
+}
 def handle_connection(conx):
     req = conx.makefile("b")
     reqline = req.readline().decode('utf8')
@@ -28,44 +43,71 @@ def handle_connection(conx):
         if line == '\r\n': break
         header, value = line.split(":", 1)
         headers[header.casefold()] = value.strip()
+
+    if 'cookie' in headers:
+        token = headers["cookie"][len("token="):]
+    else:
+        token = str(random.random())[2:]
     if 'content-length' in headers:
         length = int(headers['content-length'])
         body = req.read(length).decode('utf8')
     else:
         body = None
-    status, body = do_request(method, url, headers, body)
+    session = SESSIONS.setdefault(token, {})
+    status, body = do_request(session, method, url, headers, body)
     response = "HTTP/1.0 {}\r\n".format(status)
     response += "Content-Length: {}\r\n".format(
         len(body.encode("utf8")))
+    csp = "default-src http://localhost:8000"
+    response += "Content-Security-Policy: {}\r\n".format(csp)
+    if "cookie" not in headers:
+        template = "Set-Cookie: token={}; SameSite=Lax\r\n"
+        response += template.format(token)
     response += "\r\n" + body
     conx.send(response.encode('utf8'))
     conx.close()
 
-def show_comments():
+def show_comments(session):
     out = "<!doctype html>"
-    for entry in ENTRIES:
-        out += "<p>" + entry + "</p>"
-    out += "<form action=add method=get>"
-    out +=  "<p><input name=guest></p>"
-    out +=  "<p><button>Sign the book!</button></p>"
-    out += "</form>"
+    for entry, who in ENTRIES:
+        out += "<p>" + html.escape(entry) + "\n"
+        out += "<i>by " + html.escape(who) + "</i></p>"
+    if "user" in session:
+        nonce = str(random.random())[2:]
+        session["nonce"] = nonce
+        out += "<h1>Hello, " + session["user"] + "</h1>"
+        out += "<form action=add method=post>"
+        out +=   "<p><input name=guest></p>"
+        out +=   "<p><button>Sign the book!</button></p>"
+        out +=   "<input name=nonce type=hidden value=" + nonce + ">"
+        out += "</form>"
+    else:
+        out += "<a href=/login>Sign in to write in the guest book</a>"
     out += "<strong></strong>"
     out += "<link rel=stylesheet href=/comment.css>"
     out += "<script src=/comment.js></script>"
+    out += "<script src=https://example.com/evil.js></script>"
     return out
 
-def do_request(method, url, headers, body):
+def do_request(session, method, url, headers, body):
     query = None
     if "?" in url:
         url, query = url.split("?", 1)
     if method == "GET" and url == "/":
-        return "200 OK", show_comments()
+        return "200 OK", show_comments(session)
+    elif method == "GET" and url == "/login":
+        return "200 OK", login_form(session)
+    elif method == "POST" and url == "/":
+        params = form_decode(body)
+        return do_login(session, params)
     elif method == "POST" and url == "/add":
         params = form_decode(body)
-        return "200 OK", add_entry(params)
+        add_entry(session, params)
+        return "200 OK", show_comments(session)
     elif method == "GET" and url == "/add":
         params = form_decode(query or "")
-        return "200 OK", add_entry(params)
+        add_entry(session, params)
+        return "200 OK", show_comments(session)
     elif method == "GET" and url == "/comment.js":
         with open(os.path.join(os.path.dirname(__file__), "comment.js")) as f:
             return "200 OK", f.read()
@@ -86,11 +128,33 @@ def form_decode(body):
         params[name] = value
     return params
 
-def add_entry(params):
+def add_entry(session, params):
+    if "user" not in session: return
+    if "nonce" not in session or "nonce" not in params: return
+    if session["nonce"] != params["nonce"]: return
     if 'guest' in params and len(params['guest']) <= 100:
-        ENTRIES.append(params['guest'])
+        ENTRIES.append((params['guest'], session["user"]))
         save_entries()
-    return show_comments()
+
+def login_form(session):
+    body = "<!doctype html>"
+    body += "<form action=/ method=post>"
+    body += "<p>Username: <input name=username></p>"
+    body += "<p>Password: <input name=password type=password></p>"
+    body += "<p><button>Log in</button></p>"
+    body += "</form>"
+    return body
+
+def do_login(session, params):
+    username = params.get("username")
+    password = params.get("password")
+    if username in LOGINS and LOGINS[username] == password:
+        session["user"] = username
+        return "200 OK", show_comments(session)
+    else:
+        out = "<!doctype html>"
+        out += "<h1>Invalid password for {}</h1>".format(username)
+        return "401 Unauthorized", out
 
 def not_found(url, method):
     out = "<!doctype html>"
