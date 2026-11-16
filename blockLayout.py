@@ -1,5 +1,6 @@
-from draw import DrawRect, Rect
-from constants import HSTEP, VSTEP
+import skia
+
+from draw import DrawRRect, paint_visual_effects
 from fonts import get_font
 from inputLayout import INPUT_WIDTH_PX, InputLayout
 from lineLayout import LineLayout
@@ -25,10 +26,15 @@ def is_block_node(node):
     return isinstance(node, Element) and node.tag in BLOCK_ELEMENTS
 
 def paint_tree(layout_object, display_list):
+    cmds = []
     if layout_object.should_paint():
-        display_list.extend(layout_object.paint())
+        cmds = layout_object.paint()
     for child in layout_object.children:
-        paint_tree(child, display_list)
+        paint_tree(child, cmds)
+    # 시각 효과는 자식까지 그린 뒤에, 그 요소 전체에 씌운다.
+    if layout_object.should_paint():
+        cmds = layout_object.paint_effects(cmds)
+    display_list.extend(cmds)
 
 
 
@@ -174,18 +180,23 @@ class BlockLayout:
         self.y = None
 
     def self_rect(self):
-        return Rect(self.x, self.y,
+        return skia.Rect.MakeLTRB(self.x, self.y,
             self.x + self.width, self.y + self.height)
 
     def paint(self):
         cmds = []
-        if len(self.nodes) == 1:
-            bgColor = self.nodes[0].style.get("background-color", "transparent")
-        else:
-            bgColor = "transparent"
-        if bgColor != "transparent":
-            rect = DrawRect(self.self_rect(), bgColor)
-            cmds.append(rect)
+        if len(self.nodes) != 1:
+            return cmds
+        bgcolor = self.nodes[0].style.get("background-color", "transparent")
+        if bgcolor != "transparent":
+            radius = float(self.nodes[0].style.get("border-radius", "0px")[:-2])
+            cmds.append(DrawRRect(self.self_rect(), radius, bgcolor))
+        return cmds
+
+    def paint_effects(self, cmds):
+        # 노드가 하나인 요소만 자신의 효과를 갖는다. 익명 블록은 그대로 둔다.
+        if len(self.nodes) == 1 and isinstance(self.nodes[0], Element):
+            return paint_visual_effects(self.nodes[0], cmds, self.self_rect())
         return cmds
 
     def should_paint(self):
@@ -278,26 +289,23 @@ class BlockLayout:
 
         weight = node.style["font-weight"]
         style = node.style["font-style"]
-        if style == "normal": style = "roman"
-        size = int(float(node.style["font-size"][:-2]) * .75)
+        size = float(node.style["font-size"][:-2]) * 0.75
         font = get_font(size, weight, style)
-        self.cursor_x += w + font.measure(" ")
+        self.cursor_x += w + font.measureText(" ")
 
     def word(self, node, word):
         weight = node.style["font-weight"]
         style = node.style["font-style"]
-        if style == "normal":
-            style = "roman"
-        size = int(float(node.style["font-size"][:-2]) * .75)
+        size = float(node.style["font-size"][:-2]) * 0.75
         font = get_font(size, weight, style)
-        w = font.measure(word)
+        w = font.measureText(word)
         if self.cursor_x + w > self.width:
             self.new_line()
         line = self.children[-1]
         previous_word = line.children[-1] if line.children else None
         text = TextLayout(node, word, line, previous_word)
         line.children.append(text)
-        self.cursor_x += w + font.measure(" ")
+        self.cursor_x += w + font.measureText(" ")
 
     def new_line(self):
         self.cursor_x = 0
