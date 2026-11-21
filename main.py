@@ -1,7 +1,9 @@
 import os
 import sys
 
-from browser import Browser
+import sdl2
+
+from browser import Browser, mainloop
 from url import URL
 
 DEFAULT_FILE = os.path.join(
@@ -9,17 +11,16 @@ DEFAULT_FILE = os.path.join(
 
 
 if __name__ == "__main__":
+    sdl2.SDL_Init(sdl2.SDL_INIT_VIDEO | sdl2.SDL_INIT_EVENTS)
+    sdl2.SDL_StartTextInput()
     browser = Browser()
 
-    def load():
-        if len(sys.argv) > 1:
-            target = sys.argv[1]
-        else:
-            target = "file://" + DEFAULT_FILE
-        try:
-            browser.new_window(URL(target))
-        except Exception:
-            browser.new_window(URL("about:blank"))
-
-    browser.root.after(10, load)
-    browser.root.mainloop()
+    if len(sys.argv) > 1:
+        target = sys.argv[1]
+    else:
+        target = "file://" + DEFAULT_FILE
+    try:
+        browser.new_window(URL(target))
+    except Exception:
+        browser.new_window(URL("about:blank"))
+    mainloop(browser)

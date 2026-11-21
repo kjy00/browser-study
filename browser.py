@@ -1,7 +1,10 @@
-import tkinter
+import ctypes
+import math
+import sys
 import urllib.parse
 from JSContext import JSContext
-import dukpy
+import sdl2
+import skia
 
 from constants import (
     HEIGHT,
@@ -15,58 +18,98 @@ from chrome import NEW_TAB_URL, Chrome
 from cssParser import CSSParser, cascade_priority, style, tree_to_list
 from documentLayout import DocumentLayout
 from blockLayout import Element, HTMLParser, Text, paint_tree
+from draw import DrawRect
 from url import URL
 
 DEFAULT_STYLE_SHEET = CSSParser(open("browser.css").read()).parse()
 
 class Browser:
-    #프로세스 전체. 창 목록과 Tk 루트만 가진다.
+    #프로세스 전체. 창 목록과 SDL 이벤트만 가진다.
     def __init__(self):
-        self.root = tkinter.Tk()
-        self.root.withdraw()
         self.windows = []
+        self.windows_by_id = {}
 
     def new_window(self, url: URL):
         window = Window(self)
         self.windows.append(window)
+        self.windows_by_id[window.window_id] = window
         window.new_tab(url)
+        sdl2.SDL_RaiseWindow(window.sdl_window)
         return window
+
+    def window_for(self, window_id):
+        return self.windows_by_id.get(window_id)
 
     def close_window(self, window):
         self.windows.remove(window)
-        window.window.destroy()
-        if not self.windows: #마지막 창이 닫히면 프로세스도 끝낸다.
-            self.root.destroy()
+        self.windows_by_id.pop(window.window_id, None)
+        sdl2.SDL_DestroyWindow(window.sdl_window)
+        if not self.windows:
+            sdl2.SDL_Quit()
+            sys.exit()
+
+    def handle_quit(self):
+        for window in list(self.windows):
+            sdl2.SDL_DestroyWindow(window.sdl_window)
+        self.windows.clear()
+        self.windows_by_id.clear()
 
 
 class Window:
-    #창 하나. 캔버스와 크롬, 탭 목록을 가진다.
+    #창 하나. SDL 창과 크롬, 탭 표면을 가진다.
     def __init__(self, browser: Browser):
         self.browser = browser
         self.tabs = []
         self.active_tab = None
+        self.focus = None
         self.width = WIDTH
         self.height = HEIGHT
-        self.window = tkinter.Toplevel(browser.root)
-        self.canvas = tkinter.Canvas(self.window, width=self.width, height=self.height, bg="white")
-        self.canvas.pack(fill="both", expand=True)
+        self.sdl_window = sdl2.SDL_CreateWindow(
+            b"Browser",
+            sdl2.SDL_WINDOWPOS_CENTERED,
+            sdl2.SDL_WINDOWPOS_CENTERED,
+            self.width,
+            self.height,
+            sdl2.SDL_WINDOW_SHOWN | sdl2.SDL_WINDOW_RESIZABLE)
+        if not self.sdl_window:
+            message = sdl2.SDL_GetError()
+            if isinstance(message, bytes):
+                message = message.decode()
+            raise RuntimeError(message)
+        self.window_id = sdl2.SDL_GetWindowID(self.sdl_window)
+        shown_w, shown_h = ctypes.c_int(), ctypes.c_int()
+        sdl2.SDL_GetWindowSize(
+            self.sdl_window, ctypes.byref(shown_w), ctypes.byref(shown_h))
+        self.width = shown_w.value
+        self.height = shown_h.value
         self.chrome = Chrome(self)
-        self.window.protocol("WM_DELETE_WINDOW", self.handle_close)
-        self.window.bind("<Down>", self.handle_down)
-        self.window.bind("<Up>", self.handle_up)
-        self.window.bind("<MouseWheel>", self.handle_mouse_wheel)
-        self.window.bind("<Configure>", self.handle_resize)
-        self.window.bind("<Button-1>", self.handle_click)
-        self.window.bind("<Key>", self.handle_key)
-        self.window.bind("<Return>", self.handle_enter)
-        self.window.bind("<BackSpace>", self.handle_backspace)
-        self.window.bind("<Control-n>", self.handle_new_window)
+        self.root_surface = self.make_root_surface()
+        self.chrome_surface = skia.Surface(
+            self.width, math.ceil(self.chrome.bottom))
+        self.tab_surface = None
+        if sdl2.SDL_BYTEORDER == sdl2.SDL_BIG_ENDIAN:
+            self.RED_MASK = 0xff000000
+            self.GREEN_MASK = 0x00ff0000
+            self.BLUE_MASK = 0x0000ff00
+            self.ALPHA_MASK = 0x000000ff
+        else:
+            self.RED_MASK = 0x000000ff
+            self.GREEN_MASK = 0x0000ff00
+            self.BLUE_MASK = 0x00ff0000
+            self.ALPHA_MASK = 0xff000000
+
+    def make_root_surface(self):
+        return skia.Surface.MakeRaster(
+            skia.ImageInfo.Make(
+                self.width, self.height,
+                ct=skia.kRGBA_8888_ColorType,
+                at=skia.kUnpremul_AlphaType))
 
     @property
     def tab_height(self):
         return self.height - self.chrome.bottom
 
-    def handle_new_window(self, event):
+    def handle_new_window(self):
         self.browser.new_window(URL(NEW_TAB_URL))
 
     def new_tab(self, url: URL):
@@ -74,73 +117,162 @@ class Window:
         new_tab.load(url)
         self.active_tab = new_tab
         self.tabs.append(new_tab)
+        self.raster_chrome()
+        self.raster_tab()
         self.draw()
 
-    def handle_down(self, event):
+    def handle_down(self):
+        if self.active_tab is None:
+            return
         self.active_tab.scroll_down()
         self.draw()
 
-    def handle_up(self, event):
+    def handle_up(self):
+        if self.active_tab is None:
+            return
         self.active_tab.scroll_up()
         self.draw()
 
     def handle_mouse_wheel(self, event):
-        if event.delta > 0:
-            self.active_tab.scroll_up()
-        else:
-            self.active_tab.scroll_down()
-        self.draw()
-
-    def handle_click(self, event):
-        if event.y < self.chrome.bottom:
-            self.focus = None
-            self.chrome.click(event.x, event.y)
-        elif self.active_tab is not None:
-            self.focus = "content"
-            self.chrome.blur()
-            self.active_tab.click(event.x, event.y - self.chrome.bottom)
-        self.draw()
-
-    def handle_key(self, event):
-        if len(event.char) == 0: return 
-        if not (0x20 <= ord(event.char) < 0x7f): return
-        if self.chrome.keypress(event.char):
-            self.draw()
-        elif self.focus == "content":
-            self.active_tab.keypress(event.char)
-            self.draw()
-
-    def handle_enter(self, event):
-        self.chrome.enter()
-        self.draw()
-
-    def handle_backspace(self, event):
-        self.chrome.delete()
-        self.draw()
-
-    def handle_close(self):
-        self.browser.close_window(self)
-
-    def handle_resize(self, event):
-        if event.widget != self.window:
+        if self.active_tab is None:
             return
-        width = self.window.winfo_width()
-        height = self.window.winfo_height()
+        delta = event.y
+        if delta == 0 and hasattr(event, "preciseY"):
+            delta = event.preciseY
+        if delta > 0:
+            self.active_tab.scroll_up()
+        elif delta < 0:
+            self.active_tab.scroll_down()
+        else:
+            return
+        self.draw()
+
+    def handle_click(self, e):
+        if self.active_tab is None:
+            return
+        if e.y < self.chrome.bottom:
+            self.focus = None
+            self.chrome.click(e.x, e.y)
+            self.raster_chrome()
+            self.raster_tab()
+        else:
+            if self.focus != "content":
+                self.focus = "content"
+                self.chrome.blur()
+                self.raster_chrome()
+            url = self.active_tab.url
+            tab_y = e.y - self.chrome.bottom
+            self.active_tab.click(e.x, tab_y)
+            if self.active_tab.url != url:
+                self.raster_chrome()
+            self.raster_tab()
+        self.draw()
+
+    def handle_key(self, char):
+        if len(char) == 0: return
+        if not (0x20 <= ord(char) < 0x7f): return
+        if self.chrome.keypress(char):
+            self.raster_chrome()
+            self.draw()
+        elif self.focus == "content" and self.active_tab is not None:
+            self.active_tab.keypress(char)
+            self.raster_tab()
+            self.draw()
+
+    def handle_enter(self):
+        if self.chrome.focus:
+            self.chrome.enter()
+            self.raster_tab()
+            self.raster_chrome()
+            self.draw()
+
+    def handle_backspace(self):
+        if self.chrome.focus == "address bar":
+            self.chrome.delete()
+            self.raster_chrome()
+            self.draw()
+
+    def handle_resize(self, width, height):
+        width = int(width)
+        height = int(height)
         if width <= 1 or height <= self.chrome.bottom:
+            return
+        if width == self.width and height == self.height:
             return
         self.width = width
         self.height = height
+        self.root_surface = self.make_root_surface()
+        self.chrome_surface = skia.Surface(
+            self.width, math.ceil(self.chrome.bottom))
         for tab in self.tabs:
             tab.resize(self.width, self.tab_height)
+        self.raster_chrome()
+        self.raster_tab()
         self.draw()
 
-    def draw(self):
-        self.canvas.delete("all")
-        if self.active_tab is not None:
-            self.active_tab.draw(self.canvas, self.chrome.bottom)
-            self.window.title(self.active_tab.title)
+    def raster_tab(self):
+        # 페이지가 바뀔 때만 탭 표면을 다시 그린다. 스크롤은 이 표면을 옮기기만 한다.
+        tab = self.active_tab
+        if tab is None or tab.document is None:
+            return
+        tab_height = math.ceil(tab.document.height + 2 * VSTEP)
+        tab_height = max(tab_height, 1)
+        if not self.tab_surface \
+                or tab_height != self.tab_surface.height() \
+                or self.width != self.tab_surface.width():
+            self.tab_surface = skia.Surface(self.width, tab_height)
+        canvas = self.tab_surface.getCanvas()
+        canvas.clear(skia.ColorWHITE)
+        tab.raster(canvas)
+
+    def raster_chrome(self):
+        canvas = self.chrome_surface.getCanvas()
+        canvas.clear(skia.ColorWHITE)
         for cmd in self.chrome.paint():
-            cmd.execute(0, self.canvas)
+            cmd.execute(canvas)
+
+    def draw(self):
+        self.composite()
+        if self.active_tab is None or self.tab_surface is None:
+            return
+        if self.active_tab.title:
+            sdl2.SDL_SetWindowTitle(
+                self.sdl_window, self.active_tab.title.encode("utf8"))
+
+        skia_image = self.root_surface.makeImageSnapshot()
+        skia_bytes = skia_image.tobytes()
+        depth = 32
+        pitch = 4 * self.width
+        sdl_surface = sdl2.SDL_CreateRGBSurfaceFrom(
+            skia_bytes, self.width, self.height, depth, pitch,
+            self.RED_MASK, self.GREEN_MASK,
+            self.BLUE_MASK, self.ALPHA_MASK)
+        rect = sdl2.SDL_Rect(0, 0, self.width, self.height)
+        window_surface = sdl2.SDL_GetWindowSurface(self.sdl_window)
+        sdl2.SDL_BlitSurface(sdl_surface, rect, window_surface, rect)
+        sdl2.SDL_UpdateWindowSurface(self.sdl_window)
+        sdl2.SDL_FreeSurface(sdl_surface)
+
+    def composite(self):
+        # 탭 표면과 크롬 표면을 루트 표면에 합친다. 스크롤은 탭 표면을 옮기기만 한다.
+        if self.active_tab is None or self.tab_surface is None:
+            return
+        canvas = self.root_surface.getCanvas()
+        canvas.clear(skia.ColorWHITE)
+        tab_rect = skia.Rect.MakeLTRB(
+            0, self.chrome.bottom, self.width, self.height)
+        tab_offset = self.chrome.bottom - self.active_tab.scroll
+        canvas.save()
+        canvas.clipRect(tab_rect)
+        canvas.translate(0, tab_offset)
+        self.tab_surface.draw(canvas, 0, 0)
+        canvas.restore()
+        self.active_tab.paint_scrollbar(canvas, self.chrome.bottom)
+        chrome_rect = skia.Rect.MakeLTRB(0, 0, self.width, self.chrome.bottom)
+        canvas.save()
+        canvas.clipRect(chrome_rect)
+        self.chrome_surface.draw(canvas, 0, 0)
+        canvas.restore()
 
 
 class Tab:
@@ -183,8 +315,8 @@ class Tab:
     def click(self, x, y):
         self.focus = None
         y += self.scroll
-        objs = [obj for obj in tree_to_list(self.document, []) 
-        if obj.x <= x < obj.x + obj.width 
+        objs = [obj for obj in tree_to_list(self.document, [])
+        if obj.x <= x < obj.x + obj.width
         and obj.y <= y < obj.y + obj.height]
         if not objs:
             return
@@ -240,7 +372,7 @@ class Tab:
         else:
             self.title = str(self.url)
         #<script> 태그의 스크립트를 받아온다.
-        scripts = [node.attributes["src"] for node in node_list 
+        scripts = [node.attributes["src"] for node in node_list
                 if isinstance(node, Element) and node.tag == "script"
                 and "src" in node.attributes]
         for script in scripts:
@@ -254,9 +386,9 @@ class Tab:
                 continue
             self.js.run(script_url, body)
         #<link> 태그의 스타일시트를 받아온다.
-        links = [node.attributes["href"] for node in node_list 
-                if isinstance(node, Element) and node.tag == "link" 
-                and node.attributes.get("rel") == "stylesheet" 
+        links = [node.attributes["href"] for node in node_list
+                if isinstance(node, Element) and node.tag == "link"
+                and node.attributes.get("rel") == "stylesheet"
                 and "href" in node.attributes]
         for link in links:
             style_url = url.resolve(link)
@@ -288,30 +420,27 @@ class Tab:
         self.display_list = []
         paint_tree(self.document, self.display_list)
 
-    def draw(self, canvas, offset: int):
+    def raster(self, canvas):
         for cmd in self.display_list:
-            if cmd.rect.top > self.scroll + self.tab_height: continue
-            if cmd.rect.bottom < self.scroll: continue
-            cmd.execute(self.scroll - offset, canvas)
-        self.draw_scrollbar(canvas, offset)
+            cmd.execute(canvas)
 
-    def draw_scrollbar(self, canvas, offset: int):
+    def paint_scrollbar(self, canvas, offset):
         if not self.display_list or self.max_scroll == 0:
             return
-
         scrollbar_height = self.tab_height * self.tab_height / self.doc_height
         scrollbar_height = max(SCROLLBAR_MIN_HEIGHT, min(scrollbar_height, self.tab_height))
-
         pos_x1 = self.width - SCROLLBAR_WIDTH
         pos_y1 = offset + (self.scroll / self.max_scroll) * (self.tab_height - scrollbar_height)
         pos_x2 = self.width
         pos_y2 = pos_y1 + scrollbar_height
-        canvas.create_rectangle(pos_x1, pos_y1, pos_x2, pos_y2, fill="blue")
+        DrawRect(skia.Rect.MakeLTRB(pos_x1, pos_y1, pos_x2, pos_y2), "blue").execute(canvas)
+
     def keypress(self, char):
         if self.focus:
             if self.js.dispatch_event("keydown", self.focus): return
             self.focus.attributes["value"] += char
             self.render()
+
     def submit_form(self, elt):
         if self.js.dispatch_event("submit", elt): return
         inputs = [node for node in tree_to_list(elt, []) if isinstance(node, Element) and node.tag == "input" and "name" in node.attributes]
@@ -331,3 +460,55 @@ class Tab:
             separator = "&" if "?" in url.path else "?"
             url.path += separator + body
             self.load(url)
+
+
+def mainloop(browser):
+    event = sdl2.SDL_Event()
+    while True:
+        while sdl2.SDL_PollEvent(ctypes.byref(event)) != 0:
+            if event.type == sdl2.SDL_QUIT:
+                browser.handle_quit()
+                sdl2.SDL_Quit()
+                sys.exit()
+            elif event.type == sdl2.SDL_WINDOWEVENT:
+                window = browser.window_for(event.window.windowID)
+                if window is None:
+                    continue
+                if event.window.event == sdl2.SDL_WINDOWEVENT_CLOSE:
+                    browser.close_window(window)
+                elif event.window.event == sdl2.SDL_WINDOWEVENT_SIZE_CHANGED:
+                    window.handle_resize(event.window.data1, event.window.data2)
+                elif event.window.event == sdl2.SDL_WINDOWEVENT_EXPOSED:
+                    window.draw()
+            elif event.type == sdl2.SDL_MOUSEBUTTONUP:
+                window = browser.window_for(event.button.windowID)
+                if window:
+                    window.handle_click(event.button)
+            elif event.type == sdl2.SDL_MOUSEWHEEL:
+                window = browser.window_for(event.wheel.windowID)
+                if window:
+                    window.handle_mouse_wheel(event.wheel)
+            elif event.type == sdl2.SDL_KEYDOWN:
+                window = browser.window_for(event.key.windowID)
+                if window is None:
+                    continue
+                sym = event.key.keysym.sym
+                mod = event.key.keysym.mod
+                if sym == sdl2.SDLK_RETURN:
+                    window.handle_enter()
+                elif sym == sdl2.SDLK_DOWN:
+                    window.handle_down()
+                elif sym == sdl2.SDLK_UP:
+                    window.handle_up()
+                elif sym == sdl2.SDLK_BACKSPACE:
+                    window.handle_backspace()
+                elif sym == sdl2.SDLK_n and (mod & sdl2.KMOD_CTRL):
+                    window.handle_new_window()
+            elif event.type == sdl2.SDL_TEXTINPUT:
+                window = browser.window_for(event.text.windowID)
+                if window is None:
+                    continue
+                text = event.text.text
+                if isinstance(text, bytes):
+                    text = text.decode("utf8")
+                window.handle_key(text.replace("\x00", ""))
