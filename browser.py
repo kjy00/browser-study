@@ -23,6 +23,33 @@ from url import URL
 
 DEFAULT_STYLE_SHEET = CSSParser(open("browser.css").read()).parse()
 
+class Task:
+    # 나중에 실행할 함수와 인자. 지금 당장 부르지 않는다.
+    def __init__(self, task_code, *args):
+        self.task_code = task_code
+        self.args = args
+
+    def run(self):
+        self.task_code(*self.args)
+        self.task_code = None
+        self.args = None
+
+
+class TaskRunner:
+    # 탭마다 하나씩. 먼저 넣은 태스크를 먼저 실행한다.
+    def __init__(self, tab):
+        self.tab = tab
+        self.tasks = []
+
+    def schedule_task(self, task):
+        self.tasks.append(task)
+
+    def run(self):
+        if len(self.tasks) > 0:
+            task = self.tasks.pop(0)
+            task.run()
+
+
 class Browser:
     #프로세스 전체. 창 목록과 SDL 이벤트만 가진다.
     def __init__(self):
@@ -287,6 +314,7 @@ class Tab:
         self.history = []
         self.title = ""
         self.focus = None
+        self.task_runner = TaskRunner(self)
 
     @property
     def doc_height(self):
@@ -384,7 +412,8 @@ class Tab:
                 header, body = script_url.request(url)
             except:
                 continue
-            self.js.run(script_url, body)
+            task = Task(self.js.run, script_url, body)
+            self.task_runner.schedule_task(task)
         #<link> 태그의 스타일시트를 받아온다.
         links = [node.attributes["href"] for node in node_list
                 if isinstance(node, Element) and node.tag == "link"
@@ -512,3 +541,7 @@ def mainloop(browser):
                 if isinstance(text, bytes):
                     text = text.decode("utf8")
                 window.handle_key(text.replace("\x00", ""))
+        # 사용자 입력을 모두 본 뒤에, 보이는 탭의 태스크를 하나만 실행한다.
+        for window in list(browser.windows):
+            if window.active_tab:
+                window.active_tab.task_runner.run()
