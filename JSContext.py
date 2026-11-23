@@ -1,12 +1,15 @@
 from blockLayout import HTMLParser
 from cssParser import CSSParser, tree_to_list
 import dukpy
+import threading
 
 EVENT_DISPATCH_JS = "new Node(dukpy.handle).dispatchEvent(new Event(dukpy.type))"
+SETTIMEOUT_JS = "__runSetTimeout(dukpy.handle)"
 RUNTIME_JS = open("runtime.js").read()
 class JSContext:
     def __init__(self, tab):
         self.tab = tab
+        self.discarded = False
         self.node_to_handle = {}
         self.handle_to_node = {}
         self.interp = dukpy.JSInterpreter()
@@ -15,6 +18,7 @@ class JSContext:
         self.interp.export_function("getAttribute", self.getAttribute)
         self.interp.export_function("innerHTML_set", self.innerHTML_set)
         self.interp.export_function("XMLHttpRequest_send", self.XMLHttpRequest_send)
+        self.interp.export_function("setTimeout", self.setTimeout)
         self.interp.evaljs(RUNTIME_JS)
     def run(self, script, code):
         try:
@@ -50,6 +54,16 @@ class JSContext:
         for child in elt.children:
             child.parent = elt
         self.tab.render()
+    def dispatch_settimeout(self, handle):
+        if self.discarded: return
+        self.interp.evaljs(SETTIMEOUT_JS, handle=handle)
+    def setTimeout(self, handle, time):
+        # 타이머 스레드는 자바스크립트를 직접 실행하지 않고, 태스크만 넣는다.
+        from browser import Task
+        def run_callback():
+            task = Task(self.dispatch_settimeout, handle)
+            self.tab.task_runner.schedule_task(task)
+        threading.Timer(time / 1000.0, run_callback).start()
     def XMLHttpRequest_send(self, method, url, body):
         full_url = self.tab.url.resolve(url)
         if not self.tab.allowed_request(full_url):

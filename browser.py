@@ -1,6 +1,7 @@
 import ctypes
 import math
 import sys
+import threading
 import urllib.parse
 from JSContext import JSContext
 import sdl2
@@ -40,13 +41,22 @@ class TaskRunner:
     def __init__(self, tab):
         self.tab = tab
         self.tasks = []
+        # 메인 스레드와 타이머 스레드가 이 리스트를 동시에 건드리지 않게 한다.
+        self.condition = threading.Condition()
 
     def schedule_task(self, task):
+        self.condition.acquire(blocking=True)
         self.tasks.append(task)
+        self.condition.notify_all()
+        self.condition.release()
 
     def run(self):
+        task = None
+        self.condition.acquire(blocking=True)
         if len(self.tasks) > 0:
             task = self.tasks.pop(0)
+        self.condition.release()
+        if task:
             task.run()
 
 
@@ -314,6 +324,7 @@ class Tab:
         self.history = []
         self.title = ""
         self.focus = None
+        self.js = None
         self.task_runner = TaskRunner(self)
 
     @property
@@ -391,6 +402,8 @@ class Tab:
                     self.allowed_origins.append(URL(origin).origin())
         self.nodes = HTMLParser(body).parse()
         self.rules = DEFAULT_STYLE_SHEET.copy()
+        if self.js:
+            self.js.discarded = True
         self.js = JSContext(self)
         node_list = tree_to_list(self.nodes, [])
         #<title> 태그의 텍스트를 받아온다.

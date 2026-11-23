@@ -70,3 +70,16 @@ Object.defineProperty(Node.prototype, 'innerHTML', {
     call_python('innerHTML_set', this.handle, s.toString());
   },
 });
+
+SET_TIMEOUT_REQUESTS = {};
+
+function setTimeout(callback, time_delta) {
+  var handle = Object.keys(SET_TIMEOUT_REQUESTS).length;
+  SET_TIMEOUT_REQUESTS[handle] = callback;
+  call_python('setTimeout', handle, time_delta);
+}
+
+function __runSetTimeout(handle) {
+  var callback = SET_TIMEOUT_REQUESTS[handle];
+  callback();
+}
