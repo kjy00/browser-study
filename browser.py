@@ -23,6 +23,8 @@ from draw import DrawRect
 from url import URL
 
 DEFAULT_STYLE_SHEET = CSSParser(open("browser.css").read()).parse()
+# 화면을 다시 그리는 간격. 초당 약 30프레임이다.
+REFRESH_RATE_SEC = .033
 
 class Task:
     # 나중에 실행할 함수와 인자. 지금 당장 부르지 않는다.
@@ -124,6 +126,7 @@ class Window:
         self.chrome_surface = skia.Surface(
             self.width, math.ceil(self.chrome.bottom))
         self.tab_surface = None
+        self.animation_timer = None
         if sdl2.SDL_BYTEORDER == sdl2.SDL_BIG_ENDIAN:
             self.RED_MASK = 0xff000000
             self.GREEN_MASK = 0x00ff0000
@@ -246,6 +249,23 @@ class Window:
         self.raster_chrome()
         self.raster_tab()
         self.draw()
+
+    def raster_and_draw(self):
+        self.raster_chrome()
+        self.raster_tab()
+        self.draw()
+
+    def schedule_animation_frame(self):
+        # 이미 기다리는 타이머가 있으면 새로 만들지 않는다. 33ms에 렌더 한 번이다.
+        def callback():
+            active_tab = self.active_tab
+            if active_tab:
+                task = Task(active_tab.render)
+                active_tab.task_runner.schedule_task(task)
+            self.animation_timer = None
+        if not self.animation_timer:
+            self.animation_timer = threading.Timer(REFRESH_RATE_SEC, callback)
+            self.animation_timer.start()
 
     def raster_tab(self):
         # 페이지가 바뀔 때만 탭 표면을 다시 그린다. 스크롤은 이 표면을 옮기기만 한다.
@@ -554,7 +574,9 @@ def mainloop(browser):
                 if isinstance(text, bytes):
                     text = text.decode("utf8")
                 window.handle_key(text.replace("\x00", ""))
-        # 사용자 입력을 모두 본 뒤에, 보이는 탭의 태스크를 하나만 실행한다.
+        # 사용자 입력을 모두 본 뒤에, 보이는 탭의 태스크를 하나만 실행하고 화면을 갱신한다.
         for window in list(browser.windows):
             if window.active_tab:
                 window.active_tab.task_runner.run()
+            window.raster_and_draw()
+            window.schedule_animation_frame()
