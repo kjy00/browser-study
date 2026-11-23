@@ -54,7 +54,7 @@ class JSContext:
         elt.children = new_nodes
         for child in elt.children:
             child.parent = elt
-        self.tab.render()
+        self.tab.set_needs_render()
     def dispatch_settimeout(self, handle):
         if self.discarded: return
         self.interp.evaljs(SETTIMEOUT_JS, handle=handle)

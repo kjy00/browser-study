@@ -131,6 +131,8 @@ class Chrome:
             self.window.active_tab.load(URL(self.address_bar))
             self.focus = None
             self.window.focus = None
+            return True
+        return False
 
     def blur(self):
         self.focus = None

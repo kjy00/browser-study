@@ -127,6 +127,7 @@ class Window:
             self.width, math.ceil(self.chrome.bottom))
         self.tab_surface = None
         self.animation_timer = None
+        self.needs_raster_and_draw = False
         if sdl2.SDL_BYTEORDER == sdl2.SDL_BIG_ENDIAN:
             self.RED_MASK = 0xff000000
             self.GREEN_MASK = 0x00ff0000
@@ -153,13 +154,10 @@ class Window:
         self.browser.new_window(URL(NEW_TAB_URL))
 
     def new_tab(self, url: URL):
-        new_tab = Tab(self.width, self.tab_height)
+        new_tab = Tab(self, self.width, self.tab_height)
         new_tab.load(url)
         self.active_tab = new_tab
         self.tabs.append(new_tab)
-        self.raster_chrome()
-        self.raster_tab()
-        self.draw()
 
     def handle_down(self):
         if self.active_tab is None:
@@ -193,44 +191,31 @@ class Window:
         if e.y < self.chrome.bottom:
             self.focus = None
             self.chrome.click(e.x, e.y)
-            self.raster_chrome()
-            self.raster_tab()
+            self.set_needs_raster_and_draw()
         else:
             if self.focus != "content":
                 self.focus = "content"
                 self.chrome.blur()
-                self.raster_chrome()
-            url = self.active_tab.url
+                self.set_needs_raster_and_draw()
             tab_y = e.y - self.chrome.bottom
             self.active_tab.click(e.x, tab_y)
-            if self.active_tab.url != url:
-                self.raster_chrome()
-            self.raster_tab()
-        self.draw()
 
     def handle_key(self, char):
         if len(char) == 0: return
         if not (0x20 <= ord(char) < 0x7f): return
         if self.chrome.keypress(char):
-            self.raster_chrome()
-            self.draw()
+            self.set_needs_raster_and_draw()
         elif self.focus == "content" and self.active_tab is not None:
             self.active_tab.keypress(char)
-            self.raster_tab()
-            self.draw()
 
     def handle_enter(self):
-        if self.chrome.focus:
-            self.chrome.enter()
-            self.raster_tab()
-            self.raster_chrome()
-            self.draw()
+        if self.chrome.enter():
+            self.set_needs_raster_and_draw()
 
     def handle_backspace(self):
         if self.chrome.focus == "address bar":
             self.chrome.delete()
-            self.raster_chrome()
-            self.draw()
+            self.set_needs_raster_and_draw()
 
     def handle_resize(self, width, height):
         width = int(width)
@@ -246,14 +231,18 @@ class Window:
             self.width, math.ceil(self.chrome.bottom))
         for tab in self.tabs:
             tab.resize(self.width, self.tab_height)
-        self.raster_chrome()
-        self.raster_tab()
-        self.draw()
+        self.set_needs_raster_and_draw()
+
+    def set_needs_raster_and_draw(self):
+        self.needs_raster_and_draw = True
 
     def raster_and_draw(self):
+        if not self.needs_raster_and_draw:
+            return
         self.raster_chrome()
         self.raster_tab()
         self.draw()
+        self.needs_raster_and_draw = False
 
     def schedule_animation_frame(self):
         # 이미 기다리는 타이머가 있으면 새로 만들지 않는다. 33ms에 렌더 한 번이다.
@@ -333,7 +322,8 @@ class Window:
 
 
 class Tab:
-    def __init__(self, width: int, tab_height: int):
+    def __init__(self, window, width: int, tab_height: int):
+        self.window = window
         self.width = width
         self.tab_height = tab_height
         self.nodes = None
@@ -345,11 +335,12 @@ class Tab:
         self.title = ""
         self.focus = None
         self.js = None
+        self.needs_render = False
         self.task_runner = TaskRunner(self)
 
     @property
     def doc_height(self):
-        if self.nodes is None:
+        if self.document is None:
             return 0
         return self.document.height + 2 * VSTEP
 
@@ -368,10 +359,15 @@ class Tab:
         self.tab_height = tab_height
         if self.nodes is None:
             return
+        self.set_needs_render()
         self.render()
         self.scroll = min(self.scroll, self.max_scroll)
 
+    def set_needs_render(self):
+        self.needs_render = True
+
     def click(self, x, y):
+        self.render()
         self.focus = None
         y += self.scroll
         objs = [obj for obj in tree_to_list(self.document, [])
@@ -394,7 +390,8 @@ class Tab:
                 self.focus = elt
                 elt.is_focused = True
                 elt.attributes["value"] = ""
-                return self.render()
+                self.set_needs_render()
+                return
             elif elt.tag == "button":
                 if self.js.dispatch_event("click", elt): return
                 while elt:
@@ -469,18 +466,22 @@ class Tab:
             css = "".join( child.text for child in style_node.children if isinstance(child, Text))
             self.rules.extend(CSSParser(css).parse())
         self.scroll = 0
-        self.render()
+        self.set_needs_render()
 
     def allowed_request(self, url):
         return self.allowed_origins == None or \
             url.origin() in self.allowed_origins
 
     def render(self):
+        if not self.needs_render:
+            return
         style(self.nodes, (sorted(self.rules, key=cascade_priority))) #각 노드에 스타일을 적용한다.
         self.document = DocumentLayout(self.nodes, width=self.width) #레이아웃 트리(x, y, width, height)를 만든다.
         self.document.layout()
         self.display_list = []
         paint_tree(self.document, self.display_list)
+        self.needs_render = False
+        self.window.set_needs_raster_and_draw()
 
     def raster(self, canvas):
         for cmd in self.display_list:
@@ -501,7 +502,7 @@ class Tab:
         if self.focus:
             if self.js.dispatch_event("keydown", self.focus): return
             self.focus.attributes["value"] += char
-            self.render()
+            self.set_needs_render()
 
     def submit_form(self, elt):
         if self.js.dispatch_event("submit", elt): return
